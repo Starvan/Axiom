@@ -99,7 +99,7 @@ public sealed partial class WorkbenchWindow
             body.Children.Add(Text("仅启动：软件或资源管理器重建图标后可能再出现，可点击立即隐藏。\n持续：订阅系统通知，发现名单内图标重新出现后再隐藏；没有定时扫描。", 12, Muted));
             var wait = new TextBox { Header = "等待托盘图标出现（秒）", Text = waitText, MaxLength = 8 };
             wait.TextChanged += (_, _) => waitText = wait.Text; body.Children.Add(wait);
-            body.Children.Add(Text("填写 1–30 的整数秒。已有图标立即隐藏；尚未出现时，最多等待所设秒数的系统通知。每个程序分别等待，超时会说明未找到。启动较慢可设为 30 秒；这不是固定延迟。", 12, Muted));
+            body.Children.Add(Text($"填写 1–{TrayCapabilities.MaximumWaitSeconds} 的整数秒。已有图标立即隐藏；尚未出现时，最多等待所设秒数的系统通知。每个程序分别等待，超时会说明未找到。开机启动较慢可设为 60 秒；这不是固定延迟。", 12, Muted));
             var toggle = new ToggleSwitch { Header = "启用托盘管理", OnContent = "已启用", OffContent = "已关闭", IsOn = enabled };
             toggle.Toggled += (_, _) => enabled = toggle.IsOn; body.Children.Add(toggle);
             body.Children.Add(Text("启用或启用时保存会处理当前图标一次。关闭只停止未来操作，不恢复已隐藏图标。系统版本、权限或未知图标身份可能使识别/隐藏失败，结果会说明。", 12, Amber));
@@ -128,8 +128,8 @@ public sealed partial class WorkbenchWindow
             {
                 try
                 {
-                    if (!int.TryParse(wait.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.CurrentCulture, out var seconds) || seconds is < 1 or > 30)
-                        throw new ArgumentException("等待托盘图标出现的时间须为 1–30 的整数秒。");
+                    if (!int.TryParse(wait.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.CurrentCulture, out var seconds) || seconds is < 1 or > TrayCapabilities.MaximumWaitSeconds)
+                        throw new ArgumentException($"等待托盘图标出现的时间须为 1–{TrayCapabilities.MaximumWaitSeconds} 的整数秒。");
                     waitSeconds = seconds;
                     TrayTool.Validate(new(original.Version, enabled, mode, [.. selection.Names], waitSeconds));
                 }

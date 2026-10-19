@@ -23,8 +23,15 @@ public static class ProviderProtocol
     public static string PipeName(string sid) => "axiom-providers-v1-" + sid.Replace('-', '_');
     public static void Validate(ProviderMessage message, DateTimeOffset now)
     {
+        var maximumDeadlineSeconds = 45;
+        if (message.Type == "invoke" && message.Invocation?.CapabilityId == TrayCapabilities.Hide)
+        {
+            // Only a validated, bounded tray wait may outlive the ordinary provider request window.
+            _ = TrayCapabilities.ValidateTargets(message.Invocation);
+            maximumDeadlineSeconds = TrayCapabilities.MaximumWaitSeconds + 15;
+        }
         if (message.Version != 1 || string.IsNullOrWhiteSpace(message.RequestId) || message.RequestId.Length > 64 ||
-            message.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(45) ||
+            message.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(maximumDeadlineSeconds) ||
             message.Samples is not null || message.Status is not null || message.Reason is not null || message.Sequence < 0 ||
             message.Sequence != 0 && message.Type is not ("lease-setting-update" or "lease-setting-release") || message.Tray is not null || message.UsageSample is not null)
             throw new InvalidDataException("Provider 请求无效。");

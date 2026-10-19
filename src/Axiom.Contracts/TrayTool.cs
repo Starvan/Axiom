@@ -17,8 +17,8 @@ public static class TrayTool
     {
         if (settings.Version < 0 || settings.Mode is not (Startup or Continuous) || settings.Executables is null || settings.Executables.Length is < 1 or > 32)
             throw new ArgumentException("托盘工具设置无效；请选择 1–32 个程序及隐藏模式。");
-        if (settings.WaitSeconds is < 1 or > 30)
-            throw new ArgumentException("等待托盘图标出现的时间须为 1–30 秒。");
+        if (settings.WaitSeconds is < 1 or > TrayCapabilities.MaximumWaitSeconds)
+            throw new ArgumentException($"等待托盘图标出现的时间须为 1–{TrayCapabilities.MaximumWaitSeconds} 秒。");
         _ = ExecutablePaths.Parse(string.Join("\n", settings.Executables));
     }
 }
