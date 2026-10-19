@@ -229,6 +229,14 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         }
         if (watchCancel is not null)
         {
+            lock (statusGate)
+                if (!freshBaseline && !stopping && startupInput is { } input &&
+                    input.Keys.ToHashSet().SetEquals(resources.Where(k => k.CapabilityId == AxiomStartupPlugin.CapabilityId)))
+                {
+                    // A local startup condition stays true while unrelated Agent demand changes.
+                    // Keep its source epoch/sequence so pending startup commands are not withdrawn.
+                    input.PreserveOnRebind = true; input.Ready = false;
+                }
             watchCancel.Cancel(); if (watcher is not null) await watcher; watchCancel.Dispose();
             watchCancel = null; watcher = null;
         }
@@ -247,14 +255,24 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         while (!token.IsCancellationRequested)
         {
             var source = keys.Length == 0 ? null : engine.RegisterSource("session-plugin-observation", keys);
-            var startupSource = local.Length == 0 ? null : engine.RegisterSource("host-startup", local);
+            StartupInput? input; bool inherited;
+            lock (statusGate)
+            {
+                inherited = startupInput is { PreserveOnRebind: true } retained && retained.Keys.ToHashSet().SetEquals(local);
+                input = inherited ? startupInput : local.Length == 0 ? null : new StartupInput(engine.RegisterSource("host-startup", local), local);
+                if (input is not null) input.PreserveOnRebind = false;
+            }
+            var startupSource = input?.Source;
             var currentWatch = BeginWindowWatch(source, keys, token);
-            var input = startupSource is null ? null : new StartupInput(startupSource, local);
             long expected = 0;
             try
             {
                 if (startupSource is not null)
-                    lock (statusGate) { startupInput = input; engine.ApplySnapshot(startupSource, input!.Sequence++, local.Select(StartupBaseline).ToArray()); }
+                    lock (statusGate)
+                    {
+                        startupInput = input;
+                        if (!inherited) engine.ApplySnapshot(startupSource, input!.Sequence++, local.Select(StartupBaseline).ToArray());
+                    }
                 using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
                 var id = Guid.NewGuid().ToString("N");
                 await ProviderProtocol.WriteAsync(pipe, new(1, "observe", id, DateTimeOffset.UtcNow.AddSeconds(5), Resources: wire,
@@ -358,7 +376,19 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                 if (!token.IsCancellationRequested && (connected || lastWatchError != error.Message))
                 { lastWatchError = error.Message; Record("自动化检测中断", error.Message + " 尚未执行的动作已取消，后台会尝试重新连接。", ActivityLevel.Warning); }
             }
-            finally { lock (statusGate) { if (ReferenceEquals(startupInput, input)) startupInput = null; } connected = false; EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
+            finally
+            {
+                lock (statusGate)
+                {
+                    var preserve = input is { PreserveOnRebind: true } && token.IsCancellationRequested && !stopping;
+                    if (!preserve)
+                    {
+                        if (ReferenceEquals(startupInput, input)) startupInput = null;
+                        if (startupSource is not null) engine.ReleaseSource(startupSource);
+                    }
+                }
+                connected = false; EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source);
+            }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { break; }
         }
     }

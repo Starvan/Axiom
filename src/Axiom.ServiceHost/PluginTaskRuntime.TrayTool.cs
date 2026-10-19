@@ -15,6 +15,7 @@ internal sealed partial class PluginTaskRuntime
         internal ResourceKey[] Keys = keys;
         internal long Sequence;
         internal bool Ready;
+        internal bool PreserveOnRebind;
     }
     private StartupInput? startupInput;
     private readonly SemaphoreSlim trayToolGate = new(1, 1);

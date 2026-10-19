@@ -176,6 +176,65 @@ public sealed class AxiomStartupTests
         finally { Directory.Delete(directory, true); }
     }
 
+    [Fact(Timeout = 20000)]
+    public async Task HdrGateAcquiringUnrelatedObservationDoesNotCancelStartupWindowAndTrayCommands()
+    {
+        var directory = NewDirectory(); var sid = "test-" + Guid.NewGuid().ToString("N");
+        var hdr = Channel.CreateUnbounded<bool?>();
+        var observing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task Observe(Action<bool?> publish, CancellationToken token)
+        { observing.TrySetResult(); await foreach (var value in hdr.Reader.ReadAllAsync(token)) publish(value); }
+        try
+        {
+            using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+            await store.SaveAsync(TaskRule("firstBoot", @"C:\Apps\Startup.exe"), default);
+            await store.SaveAsync(TaskRule("firstBoot", @"C:\Apps\Window.exe") with { Action = new(WindowCapabilities.Close, 1,
+                ImmutableDictionary<string, string>.Empty.Add("executable", @"C:\Apps\Window.exe").Add("waitSeconds", "30").Add("delaySeconds", "0").Add("title", "")) }, default);
+            await store.SaveAsync(new(TrayTool.TaskId, 0, TrayTool.Name, false,
+                new(TrayTool.Trigger, 1, ImmutableDictionary<string, string>.Empty.Add("frequency", "every").Add("mode", TrayTool.Startup)),
+                new(TrayCapabilities.Hide, 1, ImmutableDictionary<string, string>.Empty.Add("executable", @"C:\Apps\Tray.exe").Add("waitSeconds", "60").Add("delaySeconds", "0"))), default);
+            await store.SaveAsync(TaskRule("every", @"C:\Apps\Gated.exe") with { SchemaVersion = 4, RunConditions = new("off"),
+                Detection = new("process.running", 2, ImmutableDictionary<string, string>.Empty.Add("processNames", "synthetic.exe")) }, default);
+            await using var provider = new ProviderFixture(sid, holdCommands: true);
+            await using var runtime = new PluginTaskRuntime([new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new TrayToolPlugin()],
+                store, sid, activity.Engine, () => 42, observeRunHdr: Observe);
+            await runtime.InitializeAsync(); await observing.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var initial = await provider.Observations.Reader.ReadAsync(); Assert.Empty(initial.Resources!);
+            var calls = new List<ProviderMessage>(); for (var i = 0; i < 3; i++) calls.Add(await provider.NextCommand());
+            Assert.Equal(new[] { "program.start", "tray.hide", "window.close" }, calls.Select(c => c.Invocation!.CapabilityId).Order().ToArray());
+            hdr.Writer.TryWrite(false);
+            var rebound = await provider.Observations.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.Equal("process.running", Assert.Single(rebound.Resources!).CapabilityId);
+            await WaitUntil(async () => (await runtime.ReadAsync(default)).DetectionAvailable);
+            provider.ReleaseCommands.TrySetResult();
+            await WaitUntil(() => Task.FromResult(runtime.ReadTrayTool().LastStatus == OutcomeStatus.Succeeded && provider.Receipts == 3));
+            Assert.Equal(3, provider.Calls); Assert.Equal(3, provider.Receipts); Assert.Equal(0, provider.CancelledCommands);
+            await runtime.EnsureSafeToStopAsync(default);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task ActualProviderDisconnectStillCancelsStartupAndReconnectDoesNotReplayIt()
+    {
+        var directory = NewDirectory(); var sid = "test-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+            await store.SaveAsync(TaskRule("every", @"C:\Apps\Startup.exe"), default);
+            await using var provider = new ProviderFixture(sid, holdCommands: true);
+            await using var runtime = new PluginTaskRuntime([new ProgramPlugin(), new AxiomStartupPlugin()], store, sid, activity.Engine, () => 42);
+            await runtime.InitializeAsync(); await provider.Observations.Reader.ReadAsync(); await provider.NextCommand();
+            provider.DropObservations();
+            await WaitUntil(() => Task.FromResult(provider.CancelledCommands == 1));
+            await provider.Observations.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(8));
+            await WaitUntil(async () => (await runtime.ReadAsync(default)).DetectionAvailable);
+            Assert.Equal(1, provider.Calls); Assert.Equal(0, provider.Receipts);
+            await runtime.EnsureSafeToStopAsync(default);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
     private static string NewDirectory() { var dir = Path.Combine(Path.GetTempPath(), "axiom-startup-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir); return dir; }
     private static async Task WaitUntil(Func<Task<bool>> predicate)
     { for (var i = 0; i < 400; i++) { if (await predicate()) return; await Task.Delay(10); } throw new TimeoutException("Runtime did not reach expected state."); }
@@ -187,12 +246,16 @@ public sealed class AxiomStartupTests
         private readonly List<NamedPipeServerStream> streams = [];
         private readonly List<Task> handlers = [];
         private readonly Task server;
-        private int calls;
+        private int calls, receipts, cancelledCommands;
         public int Calls => Volatile.Read(ref calls);
+        public int Receipts => Volatile.Read(ref receipts);
+        public int CancelledCommands => Volatile.Read(ref cancelledCommands);
         public Channel<ProviderMessage> Observations { get; } = Channel.CreateUnbounded<ProviderMessage>();
         private readonly Channel<ProviderMessage> commands = Channel.CreateUnbounded<ProviderMessage>();
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public ProviderFixture(string sid, bool waitForReady = false) { name = ProviderProtocol.PipeName(sid); if (!waitForReady) Ready.SetResult(); server = Serve(); }
+        public TaskCompletionSource ReleaseCommands { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ProviderFixture(string sid, bool waitForReady = false, bool holdCommands = false)
+        { name = ProviderProtocol.PipeName(sid); if (!waitForReady) Ready.SetResult(); if (!holdCommands) ReleaseCommands.SetResult(); server = Serve(); }
         public Task<ProviderMessage> NextCommand() => commands.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
         public void DropObservations() { lock (streams) foreach (var pipe in streams) pipe.Dispose(); }
         private async Task Serve()
@@ -222,7 +285,12 @@ public sealed class AxiomStartupTests
                 else
                 {
                     Interlocked.Increment(ref calls); commands.Writer.TryWrite(request);
+                    var disconnected = ProviderProtocol.ReadAsync(pipe, cancel.Token);
+                    if (await Task.WhenAny(ReleaseCommands.Task, disconnected) != ReleaseCommands.Task)
+                    { Interlocked.Increment(ref cancelledCommands); await disconnected; return; }
+                    await ReleaseCommands.Task.WaitAsync(cancel.Token);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "result", request.RequestId, CommandId: request.CommandId, Status: OutcomeStatus.Succeeded, Reason: "fixture action completed"), cancel.Token);
+                    Interlocked.Increment(ref receipts); await disconnected;
                 }
             }
             catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }

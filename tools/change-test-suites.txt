@@ -1,2 +1,3 @@
+Axiom.Engine.Tests.AxiomStartupTests
 Axiom.Engine.Tests.TrayToolTests
-Axiom.Engine.Tests.TrayActionTests.TrayModuleUsesStartupComposerAndBatchPathsWithDelayAndStrictValidation
+Axiom.Engine.Tests.TaskRunConditionsTests.HostOuterWatcherSurvivesPausedInnerDemandAndStatusWatchPublishesWithoutPolling
