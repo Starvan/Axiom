@@ -59,6 +59,13 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                 GameHdrPipePeer.RequireSameSession(pipe, request.Type == "restore-shortcuts" ? "Axiom.SessionAgent.exe" : null);
                 AutomationProtocol.ValidateRequest(request, DateTimeOffset.UtcNow);
                 authorized = true;
+                if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    var wheel = request.Type == "save-brightness-wheel" ? await runtime.SaveBrightnessWheelAsync(request.WheelSettings!, deadline.Token) :
+                        request.Type == "resume-brightness-wheel" ? await runtime.ResumeAutomaticBrightnessAsync(request.ExpectedVersion!.Value, deadline.Token) : runtime.ReadBrightnessWheel();
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "brightness-wheel", request.RequestId, Wheel: wheel), deadline.Token); return;
+                }
                 if (request.Type == "shutdown") deadline.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
                 if (request.Type == "usage")
                 {

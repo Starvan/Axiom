@@ -8,7 +8,7 @@ using Axiom.Providers.Windows;
 namespace Axiom.SessionAgent;
 
 // The transport knows only registered capability IDs, never individual program parameters.
-internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionCapabilityProvider> providers)
+internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionCapabilityProvider> providers, BrightnessWheelAgent? wheel = null)
 {
     // One invocation per supported task, plus observation and short-lived catalog reads.
     private const int MaximumClients = AutomationTaskLimits.MaximumTasks + 8;
@@ -42,6 +42,25 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 if (caller != sid) throw new UnauthorizedAccessException("Provider 用户不匹配。");
                 GameHdrPipePeer.RequireHost(pipe);
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
+                if (request.Type == "observe-brightness-wheel")
+                {
+                    lifetime.CancelAfter(Timeout.InfiniteTimeSpan);
+                    await (wheel ?? throw new IOException("没有滚轮监听服务。")).ObserveAsync(pipe, request, lifetime.Token); return;
+                }
+                if (request.Type == "abandon-brightness")
+                {
+                    lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
+                    var drained = WindowsHardwareBrightness.BeginManualTakeover();
+                    await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-abandon-marked", request.RequestId, Status: OutcomeStatus.Succeeded, Reason: "已阻止新准入并放弃旧亮度恢复。"), lifetime.Token);
+                    await drained.WaitAsync(lifetime.Token);
+                    await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-abandon-complete", request.RequestId, Status: OutcomeStatus.Succeeded, Reason: "旧亮度原生工作和资源已结束。"), lifetime.Token); return;
+                }
+                if (request.Type == "resume-brightness")
+                {
+                    lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
+                    await WindowsHardwareBrightness.EndManualTakeoverAsync().WaitAsync(lifetime.Token);
+                    await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-resumed", request.RequestId, Status: OutcomeStatus.Succeeded, Reason: "已释放手动亮度准入门禁。"), lifetime.Token); return;
+                }
                 if (request.Type == "observe-tray")
                 {
                     if (!registry.ContainsKey(TrayCapabilities.Hide)) throw new ArgumentException("会话程序缺少托盘能力。");
@@ -89,6 +108,17 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 if (request.Type == "invoke")
                 {
                     lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
+                    if (request.Invocation!.CapabilityId == BrightnessWheelTool.Command)
+                    {
+                        var operation = (wheel ?? throw new IOException("没有滚轮监听服务。")).InvokeAsync(request.Invocation, lifetime.Token);
+                        var closed = ProviderProtocol.ReadAsync(pipe, lifetime.Token);
+                        if (await Task.WhenAny(operation, closed) != operation) lifetime.Cancel();
+                        var receipt = await operation;
+                        await ProviderProtocol.WriteAsync(pipe, new(1, "result", request.RequestId, CommandId: request.CommandId,
+                            Status: receipt.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, Reason: receipt.Reason, WheelSteps: receipt.ConsumedSteps), lifetime.Token);
+                        lifetime.Cancel(); try { await closed; } catch (Exception error) when (error is IOException or OperationCanceledException) { }
+                        return;
+                    }
                     var provider = registry.GetValueOrDefault(request.Invocation!.CapabilityId) ?? throw new ArgumentException("未注册此能力。");
                     UsageObservationStream.MarkAction(request.Invocation);
                     var invocation = provider.InvokeAsync(request.Invocation, lifetime.Token);

@@ -51,7 +51,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         foreach (var action in modules.SelectMany(p => p.Actions)) compiler.Register(action);
         Combinations = [.. modules.SelectMany(p => p.Combinations)];
         foreach (var combination in Combinations) compiler.RegisterCombination(combination);
-        bindings = modules.SelectMany(p => p.Bindings).DistinctBy(b => b.Descriptor.Id).ToImmutableDictionary(b => b.Descriptor.Id);
+        bindings = modules.SelectMany(p => p.Bindings).Append(WheelBinding()).DistinctBy(b => b.Descriptor.Id).ToImmutableDictionary(b => b.Descriptor.Id);
         if (Combinations.Distinct().Count() != Combinations.Length || bindings.Values.Any(b => b.Descriptor.DesiredState && b.Descriptor.Id != KeepAwakeCapabilities.Hold && !RestorableSettingInvocations.IsRestorable(b.Descriptor.Id) ||
             b.Descriptor.Command && (b.Descriptor.Parameters != TaskInvocationCommands.Schema || b.ParametersKind != ScalarKind.Text)))
             throw new ArgumentException("插件组合重复，或未采用当前会话命令/保持唤醒/可恢复设置租约contract。");
@@ -62,7 +62,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     public async Task InitializeAsync()
     {
         tasks = await database.ListAsync();
-        foreach (var task in tasks)
+        RestoreBrightnessWheelOverride();
+        foreach (var task in tasks.Where(t => !IsWheelToolTask(t)))
         {
             try { RequireSupportedTask(task); engine.SetRule(compiler.Compile(task, sid, scope)); }
             catch (ArgumentException error) { Record("任务暂不可用", task.Title + "：" + error.Message, ActivityLevel.Warning); }
@@ -80,11 +81,13 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         startupDispatched = engine.GetObservationPlan().References.Count == 0;
         await RefreshObservationAsync();
         await RefreshTrayMonitorAsync(tasks.SingleOrDefault(IsTrayToolTask), default);
+        StartWheelMonitor();
     }
     public AuthorizationDecision Authorize(string principal, ResourceKey key, CapabilityOperation operation) => new(
         principal == sid && key.Scope == scope && bindings.TryGetValue(key.CapabilityId, out var b) &&
         (operation == CapabilityOperation.Observe && b.Descriptor.Observe || operation == CapabilityOperation.ExecuteCommand && b.Descriptor.Command ||
-            operation == CapabilityOperation.ApplyDesired && (b.Descriptor.Id == KeepAwakeCapabilities.Hold || RestorableSettingInvocations.IsRestorable(b.Descriptor.Id)) && b.Descriptor.DesiredState),
+            operation == CapabilityOperation.ApplyDesired && (b.Descriptor.Id == KeepAwakeCapabilities.Hold || RestorableSettingInvocations.IsRestorable(b.Descriptor.Id)) && b.Descriptor.DesiredState ||
+            operation is CapabilityOperation.Override or CapabilityOperation.ReleaseOverride && (IsBrightness(key.CapabilityId) || key.CapabilityId == BrightnessWheelTool.Command)),
         "same-user-session registered plugin");
     public Guid NextId() => Guid.NewGuid();
     public ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken token) =>
@@ -97,6 +100,9 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             if (stopping || !Authorize(command.Principal, command.Key, CapabilityOperation.ExecuteCommand).Allowed || command.Arguments.Text is null)
                 return new(OutcomeStatus.Rejected, "程序命令权限不匹配。", command.CommandId);
             var invocation = JsonSerializer.Deserialize<TaskInvocation>(command.Arguments.Text) ?? throw new InvalidDataException("能力参数无效。");
+            if (invocation.CapabilityId == BrightnessWheelTool.Command && command.Key == WheelKey)
+                return await ExecuteWheelCommandAsync(command, invocation, token);
+            if (wheelTakenOver && IsBrightness(invocation.CapabilityId)) throw new UnauthorizedAccessException("亮度已由滚轮手动接管；请在工具箱恢复自动亮度。");
             var compiled = compiler.Catalog.Single(c => c.Kind == TaskCapabilityKind.Action && c.Id == invocation.CapabilityId);
             AutomationTaskCompiler.ValidateInvocation(invocation, compiled);
             if (invocation.CapabilityId != command.Key.CapabilityId) throw new InvalidDataException("能力参数与命令不匹配。");
@@ -152,7 +158,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     public Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token)
     {
-        if (task.Id == TrayTool.TaskId || task.Detection.CapabilityId == TrayTool.Trigger) throw new InvalidOperationException("请在工具箱中管理托盘工具。");
+        if (task.Id == TrayTool.TaskId || task.Detection.CapabilityId == TrayTool.Trigger || task.Id == BrightnessWheelTool.TaskId || task.Detection.CapabilityId == BrightnessWheelTool.Trigger) throw new InvalidOperationException("请在工具箱中管理此工具。");
         return SaveTaskAsync(task, token);
     }
     private async Task<AutomationTask> SaveTaskAsync(AutomationTask task, CancellationToken token)
@@ -178,7 +184,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     public async Task DeleteAsync(string id, long expectedVersion, CancellationToken token)
     {
-        if (id == TrayTool.TaskId) throw new InvalidOperationException("请在工具箱中管理托盘工具。");
+        if (id is TrayTool.TaskId or BrightnessWheelTool.TaskId) throw new InvalidOperationException("请在工具箱中管理此工具。");
         await gate.WaitAsync(token);
         try
         {
@@ -193,7 +199,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         await gate.WaitAsync(token);
         try
         {
-            lock (statusGate) return new([.. tasks.Where(t => !IsTrayToolTask(t))], [.. compiler.Catalog.Where(c => c.Id != TrayTool.Trigger)], [.. Combinations.Where(c => c.DetectionId != TrayTool.Trigger)], watching.Length == 0 || connected &&
+            lock (statusGate) return new([.. tasks.Where(t => !IsTrayToolTask(t) && !IsWheelToolTask(t))], [.. compiler.Catalog.Where(c => c.Id != TrayTool.Trigger)], [.. Combinations.Where(c => c.DetectionId != TrayTool.Trigger)], watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
                     p.Key.CapabilityId == ScreenContentCapabilities.Bright ? "主屏画面明亮面积" : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowOnceCapabilities.Due ? WindowOnceCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
@@ -366,6 +372,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     public async Task EnsureSafeToStopAsync(CancellationToken token)
     {
+        stopping = true;
+        await StopWheelMonitorAsync(token);
         await gate.WaitAsync(token);
         try
         {
@@ -383,6 +391,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     public async ValueTask DisposeAsync()
     {
+        stopping = true; await StopWheelMonitorAsync(default);
         trayLifetime.Cancel(); await RefreshTrayMonitorAsync(null, default);
         watchCancel?.Cancel(); if (watcher is not null) await watcher;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await engine.StopAndWaitAsync(deadline.Token);

@@ -16,7 +16,9 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     SteamToolSettings? SteamSettings = null, SteamToolSnapshot? SteamTool = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageRequest? Usage = null, UsageSnapshot? UsageSnapshot = null, string? ExportText = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSettings? TraySettings = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSnapshot? TrayTool = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSnapshot? TrayTool = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSettings? WheelSettings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSnapshot? Wheel = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -27,6 +29,17 @@ public static class AutomationProtocol
     private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
+        if (request.Wheel is not null || request.WheelSettings is not null && request.Type != "save-brightness-wheel") throw new InvalidDataException("亮度工具字段不属于此操作。");
+        if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
+        {
+            if (shortcutAgent || request.Type == "save-brightness-wheel" && request.WheelSettings is null || request.Type == "resume-brightness-wheel" && request.ExpectedVersion is not > 0)
+                throw new InvalidDataException("亮度工具操作无效。");
+            // Reuse the closed empty read-request envelope to reject every unrelated existing field.
+            ValidateRequest(request with { Type = "read-tray-tool", WheelSettings = null, ExpectedVersion = null }, now);
+            if (request.Type != "resume-brightness-wheel" && request.ExpectedVersion is not null) throw new InvalidDataException("亮度工具版本字段无效。");
+            if (request.WheelSettings is not null) BrightnessWheelTool.Validate(request.WheelSettings);
+            return;
+        }
         if (request.Version != 1 || string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 64 ||
             request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(request.Type == "shutdown" ? 45 : 15) ||
             request.TrayTool is not null || request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
@@ -85,6 +98,8 @@ public static class AutomationProtocol
             request.Type == "delete" && request.Id == Axiom.Contracts.TrayTool.TaskId)
             throw new InvalidDataException("请在工具箱中管理托盘工具。");
         if (request.Type == "save-tray-tool") Axiom.Contracts.TrayTool.Validate(request.TraySettings!);
+        if (request.Type == "save" && (request.Task!.Id == BrightnessWheelTool.TaskId || request.Task.Detection.CapabilityId == BrightnessWheelTool.Trigger) || request.Type == "delete" && request.Id == BrightnessWheelTool.TaskId)
+            throw new InvalidDataException("请在工具箱中管理亮度滚轮工具。");
         if (request.Type == "save") TaskDetectionExpressions.ValidateTask(request.Task!);
     }
     public static async Task WriteAsync(Stream stream, AutomationMessage message, CancellationToken token)

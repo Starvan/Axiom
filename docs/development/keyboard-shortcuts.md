@@ -37,3 +37,9 @@ UI 可完全退出，快捷键仍由 Session Agent 监听。同目录 UI 存在�
 模拟动作在该消息线程一次性读取当前修饰键和目标按键状态；临时松开已有修饰键、按序发送完整 down/up、恢复原修饰键，右 Ctrl/Alt 及导航键包含扩展标志。所有输入构成一次 SendInput 包，keyboard.send 的能力级 single-flight 防止包交错，不阻塞其他能力；部分发送失败只补偿已注入按键，不重试整条命令。拒绝当前已按住的主键以及 Axiom 当前登记组合，避免自触发循环/误开关 UI。只作用于执行时的前台窗口，不切焦点；结果确认输入提交而非目标软件功能。系统/UIPI/软件限制不绕过。
 
 真实重复按键、不同触发组合、左右修饰键、共享触发执行程序、零 UI 工作及暂停释放已验；见 0027 验收（本机历史记录）。API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)、[SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)。
+
+## 快捷键与滚轮亮度工具
+
+工具箱提供独立的直接配置，不要求用户拼检测与动作：启停、自选Ctrl/Alt/Shift/Win及可选主键的多键组合、屏幕范围、每格调节幅度、平滑时间和每秒写入次数。它使用启用期间的[WH_MOUSE_LL](https://learn.microsoft.com/windows/win32/winmsg/lowlevelmouseproc)事件，复用会话消息线程；RegisterHotKey处理键盘组合，不能代替全局滚轮消息。回调只在WM_MOUSEWHEEL时读取配置所需键状态、过滤并合并delta，不读取键入文本、不轮询、不做I/O或显示器调用；未命中组合继续传递，停用解除hook。
+
+高分辨率滚轮保留余量，连续输入更新同一有限手势的最新目标，不按格排队。物理写入由Host Engine授权，捕获目标一次，原生线程执行有限平滑过程并确认；UI退出不停止。自动亮度的交接与显式恢复见[手动接管](../architecture/manual-override.md)，保存/启用、收到手势、写入确认和失败状态必须区分。真实效果与版本以当前交接为准，不把声明或合成输入测试当作主观手感验收。

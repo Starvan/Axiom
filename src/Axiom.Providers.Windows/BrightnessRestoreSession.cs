@@ -6,16 +6,40 @@ namespace Axiom.Providers.Windows;
 // WMI and DXVA2 can refer to the same screen. An owned restoration blocks other Axiom brightness writes.
 internal static class BrightnessNativeOwnership
 {
+    private static readonly object gate = new();
     private static Lease? active;
-    internal static IDisposable? TryAcquire()
+    private static bool manual;
+    private static bool cleanupFailed;
+    internal static IDisposable? TryAcquire(Action? abandon = null, bool manualGesture = false)
     {
-        var lease = new Lease(); return Interlocked.CompareExchange(ref active, lease, null) is null ? lease : null;
+        lock (gate)
+        {
+            if (cleanupFailed || active is not null || manual && !manualGesture || manualGesture && !manual) return null;
+            return active = new Lease(abandon);
+        }
     }
     internal static Task DrainAsync() => Volatile.Read(ref active)?.Stopped.Task ?? Task.CompletedTask;
-    private sealed class Lease : IDisposable
+    internal static Task BeginManual()
     {
+        Lease? current;
+        lock (gate) { manual = true; current = active; }
+        current?.Abandon?.Invoke();
+        return current?.Stopped.Task ?? Task.CompletedTask;
+    }
+    internal static void FailCleanup() { lock (gate) cleanupFailed = true; }
+    internal static void EndManual()
+    {
+        lock (gate)
+        {
+            if (active is not null || cleanupFailed) throw new InvalidOperationException("亮度原生工作或清理尚未确认，不能恢复自动控制。");
+            manual = false;
+        }
+    }
+    private sealed class Lease(Action? abandon) : IDisposable
+    {
+        internal readonly Action? Abandon = abandon;
         internal readonly TaskCompletionSource Stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public void Dispose() { if (ReferenceEquals(Interlocked.CompareExchange(ref active, null, this), this)) Stopped.TrySetResult(); }
+        public void Dispose() { lock (gate) if (ReferenceEquals(active, this)) { active = null; Stopped.TrySetResult(); } }
     }
 }
 
@@ -24,11 +48,11 @@ internal sealed class BrightnessRestoreTarget
     internal readonly uint Baseline;
     internal readonly Func<int, uint?> Map;
     internal readonly ConditionalSettingTransaction<uint> Transaction;
-    internal readonly bool SettleAfterWrite;
+    internal readonly bool HardwareBurst;
     internal uint? LastRead;
-    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write, bool settleAfterWrite = false)
+    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write, bool hardwareBurst = false)
     {
-        Baseline = baseline; Map = map; SettleAfterWrite = settleAfterWrite;
+        Baseline = baseline; Map = map; HardwareBurst = hardwareBurst;
         Transaction = new(baseline, () =>
         {
             LastRead = read(); return LastRead ?? throw new IOException("原亮度目标未知。");
@@ -53,6 +77,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<RestorableSettingResult> stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource captureStop;
+    private readonly CancellationTokenSource abandonStop = new();
     private readonly string? selection;
     private readonly TimeSpan timeout;
     private readonly TimeProvider time;
@@ -60,15 +85,17 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     private BrightnessFadeOptions fade;
     private TimeSpan OperationTimeout => timeout + TimeSpan.FromSeconds(fade.Enabled ? fade.DurationSeconds : 0);
     private int terminal, closeRequested;
+    private int abandoned;
     private BrightnessRestoreSession(string? selection, TimeSpan timeout, TimeProvider time, CancellationToken token, Action<TimeSpan, CancellationToken>? wait)
     { this.selection = selection; this.timeout = timeout; this.time = time; this.wait = wait; captureStop = CancellationTokenSource.CreateLinkedTokenSource(token); }
     internal static async Task<IRestorableSettingSession> CreateAsync(Func<CancellationToken, BrightnessRestoreCapture> capture,
         string? selection, TimeSpan timeout, CancellationToken token, TimeProvider? time = null, Action<TimeSpan, CancellationToken>? wait = null)
     {
-        token.ThrowIfCancellationRequested(); var ownership = BrightnessNativeOwnership.TryAcquire() ?? throw new IOException("Axiom已有亮度操作或恢复租约；请先暂停已有亮度恢复任务，并等待原生操作与恢复清理结束，再启用另一亮度恢复任务。本次不排队、不修改。");
         var session = new BrightnessRestoreSession(selection, timeout, time ?? TimeProvider.System, token, wait);
+        token.ThrowIfCancellationRequested(); var ownership = BrightnessNativeOwnership.TryAcquire(session.Abandon);
+        if (ownership is null) { session.captureStop.Dispose(); session.abandonStop.Dispose(); throw new IOException("已有亮度操作、恢复租约或手动接管；请先等待释放或恢复自动控制。本次不排队、不修改。"); }
         try { new Thread(() => session.Run(capture, ownership)) { IsBackground = true, Name = "Axiom owned brightness restoration" }.Start(); }
-        catch { ownership.Dispose(); session.captureStop.Dispose(); throw; }
+        catch { ownership.Dispose(); session.captureStop.Dispose(); session.abandonStop.Dispose(); throw; }
         try { await session.ready.Task.WaitAsync(timeout, session.time, token); return session; }
         catch { session.RequestClose(); throw; } // the actual worker keeps ownership/resources until it returns and cleans up
     }
@@ -95,7 +122,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     }
     private async Task<RestorableSettingResult> SubmitAsync(int? percent, CancellationToken token)
     {
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, abandonStop.Token);
         var result = new TaskCompletionSource<RestorableSettingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!requests.Writer.TryWrite(new(percent, fade, lifetime.Token, result)))
         { phase.Release(); return new(false, "亮度租约已结束；不会写入或重新捕获。", false); }
@@ -111,6 +138,12 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     {
         Interlocked.Exchange(ref terminal, 1); Interlocked.Exchange(ref closeRequested, 1);
         try { captureStop.Cancel(); } catch (ObjectDisposedException) { } requests.Writer.TryComplete();
+    }
+    private void Abandon()
+    {
+        Interlocked.Exchange(ref abandoned, 1);
+        try { abandonStop.Cancel(); } catch (ObjectDisposedException) { }
+        RequestClose();
     }
     public async ValueTask DisposeAsync() { RequestClose(); await stopped.Task; }
     private void Run(Func<CancellationToken, BrightnessRestoreCapture> create, IDisposable ownership)
@@ -150,7 +183,12 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
         {
             try
             {
-                if (capture is not null && !releaseAttempted)
+                if (capture is not null && Volatile.Read(ref abandoned) != 0)
+                {
+                    foreach (var target in capture.Targets) target.Transaction.Relinquish();
+                    receipt = new(true, "已明确放弃本轮亮度恢复，保留当下亮度；原生工作及资源已结束。", false);
+                }
+                else if (capture is not null && !releaseAttempted)
                 {
                     using var cleanup = new CancellationTokenSource(OperationTimeout); receipt = Restore(capture, fade, cleanup.Token);
                 }
@@ -161,7 +199,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
             requests.Writer.TryComplete(); Interlocked.Exchange(ref terminal, 1);
             while (requests.Reader.TryRead(out var pending)) { pending.Result.TrySetResult(new(false, "亮度租约已结束。", false)); phase.Release(); }
             if (release is not null) phase.Release();
-            captureStop.Dispose(); ownership.Dispose(); stopped.TrySetResult(receipt); release?.Result.TrySetResult(receipt);
+            ownership.Dispose(); captureStop.Dispose(); abandonStop.Dispose(); stopped.TrySetResult(receipt); release?.Result.TrySetResult(receipt);
         }
     }
     internal static void CompleteApply(SemaphoreSlim admission, TaskCompletionSource<RestorableSettingResult> completion,

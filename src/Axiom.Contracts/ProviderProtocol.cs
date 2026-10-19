@@ -13,7 +13,9 @@ public sealed record ProviderMessage(int Version, string Type, string RequestId,
     ProviderResource[]? Resources = null, TaskInvocation? Invocation = null, Guid? CommandId = null,
     long Sequence = 0, ProviderSample[]? Samples = null, OutcomeStatus? Status = null, string? Reason = null,
     string[]? RequiredCapabilities = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageOptions? UsageOptions = null, UsageSample? UsageSample = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageOptions? UsageOptions = null, UsageSample? UsageSample = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSettings? WheelSettings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? WheelSteps = null);
 
 public static class ProviderProtocol
 {
@@ -26,6 +28,12 @@ public static class ProviderProtocol
             message.Samples is not null || message.Status is not null || message.Reason is not null || message.Sequence < 0 ||
             message.Sequence != 0 && message.Type is not ("lease-setting-update" or "lease-setting-release") || message.Tray is not null || message.UsageSample is not null)
             throw new InvalidDataException("Provider 请求无效。");
+        if (message.WheelSteps is not null || message.WheelSettings is not null && message.Type != "observe-brightness-wheel") throw new InvalidDataException("滚轮字段不属于此操作。");
+        if (message.Type == "observe-brightness-wheel" && message.WheelSettings is { Enabled: true } wheel && message.Invocation is null &&
+            message.Resources is null && message.RequiredCapabilities is null && message.CommandId is null && message.UsageOptions is null)
+        { BrightnessWheelTool.Validate(wheel); return; }
+        if (message.Type is "abandon-brightness" or "resume-brightness" && message.Invocation is null && message.Resources is null &&
+            message.RequiredCapabilities is null && message.CommandId is null && message.UsageOptions is null && message.WheelSettings is null) return;
         if (message.Type == "observe-usage" && message.UsageOptions is not null && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { UsageValidation.Options(message.UsageOptions); return; }
         if (message.UsageOptions is not null) throw new InvalidDataException("Unexpected observation options.");
         if (message.Type == "observe-tray" && message.Invocation is not null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { TrayCapabilities.ValidateTargets(message.Invocation); return; }

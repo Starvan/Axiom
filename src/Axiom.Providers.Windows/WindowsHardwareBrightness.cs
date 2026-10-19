@@ -9,6 +9,44 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static partial class WindowsHardwareBrightness
 {
+    public static Task<BrightnessWheelGestureResult> RunWheelGestureAsync(string target, string sid, int step, int smoothMilliseconds,
+        int writesPerSecond, long fromSteps, Func<long> latestSteps, CancellationToken token)
+    {
+        var completion = new TaskCompletionSource<BrightnessWheelGestureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        new Thread(() =>
+        {
+            BrightnessRestoreCapture? capture = null; IDisposable? ownership = null;
+            var result = new BrightnessWheelGestureResult(false, fromSteps, "亮度手势未确认；不重试。");
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                ownership = BrightnessNativeOwnership.TryAcquire(manualGesture: true) ?? throw new IOException("旧亮度原生工作尚未清理或没有手动授权。");
+                capture = WindowsHardwareBrightness.Capture(target, sid, token, directVcp: true);
+                if (capture.Targets.Count == 0 || capture.Unknown != 0) throw new IOException("目标亮度未知；本次未修改。");
+                result = WindowsBrightnessWheelGesture.RunCaptured(capture, step, smoothMilliseconds, writesPerSecond, fromSteps, latestSteps, token);
+            }
+            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+            { result = result with { Reason = "亮度手势已停止或未确认；没有补写或恢复旧值。" }; }
+            finally
+            {
+                if (capture is not null) foreach (var item in capture.Targets) item.Transaction.Relinquish();
+                try { capture?.Dispose(); }
+                catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+                { BrightnessNativeOwnership.FailCleanup(); result = result with { Success = false, Reason = "原生资源清理未确认；已禁止后续亮度准入，请正常重启后台后重新核验。" }; }
+                ownership?.Dispose(); completion.TrySetResult(result);
+            }
+        }) { IsBackground = true, Name = "Axiom authorized brightness wheel" }.Start();
+        return completion.Task;
+    }
+    public static Task BeginManualTakeover()
+    {
+        var native = BrightnessNativeOwnership.BeginManual();
+        return Task.WhenAll(native, Commands.DrainAsync());
+    }
+    public static async Task EndManualTakeoverAsync()
+    {
+        await DrainAsync(); BrightnessNativeOwnership.EndManual();
+    }
     private static readonly BoundedNativeCommand Commands = new("硬件屏幕亮度", TimeSpan.FromSeconds(10));
     public static Task DrainAsync() => Task.WhenAll(Commands.DrainAsync(), BrightnessNativeOwnership.DrainAsync()).WaitAsync(TimeSpan.FromSeconds(30));
     public static Task<(bool Success, string Reason)> SetAsync(string target, int percent, string sid, CancellationToken token, BrightnessFadeOptions fade = default)

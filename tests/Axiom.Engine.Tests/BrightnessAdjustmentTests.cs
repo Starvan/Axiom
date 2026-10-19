@@ -19,7 +19,7 @@ public sealed class BrightnessAdjustmentTests
         var recorder = new UsageRecorder(new(5, true, true, []), DateTimeOffset.UtcNow);
         var detection = new TaskInvocation(HotkeyCapabilities.Pressed, 1, ImmutableDictionary<string, string>.Empty.Add("chords", "Ctrl+Alt+F9"));
         var compiler = new AutomationTaskCompiler(); foreach (var module in modules) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
-        Assert.Equal(4, BuiltInBrightnessCapabilities.Descriptor.Fields.Length); Assert.Equal(5, HardwareBrightnessCapabilities.Descriptor.Fields.Length);
+        Assert.Equal(5, BuiltInBrightnessCapabilities.Descriptor.Fields.Length); Assert.Equal(6, HardwareBrightnessCapabilities.Descriptor.Fields.Length);
         foreach (var hardware in new[] { false, true })
         {
             var invocation = Invocation(hardware); var proposal = new UsageImport(1, recorder.Session.Id, "existing", "relative brightness", "synthetic", detection, invocation);

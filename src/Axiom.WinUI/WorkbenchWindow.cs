@@ -246,7 +246,7 @@ public sealed partial class WorkbenchWindow : Window
             if (response.Type != "snapshot" || response.Snapshot is null) throw new InvalidDataException(response.Error);
             status = response.Snapshot; reachable = true; readAt = DateTimeOffset.Now;
             await ReadGroupsAsync();
-            if (page == Page.Toolbox) { await ReadSteamToolAsync(false); await ReadTrayToolAsync(); }
+            if (page == Page.Toolbox) { await ReadSteamToolAsync(false); await ReadTrayToolAsync(); await ReadBrightnessWheelAsync(); }
             if (page == Page.Usage) await ReadUsageAsync();
             Render();
             if (page == Page.Activity) await ReadActivityCoreAsync(null, reset: true);

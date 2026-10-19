@@ -30,7 +30,7 @@ internal sealed class GameHdrAgent : IAsyncDisposable
             new RestorableSettingCapabilityProvider(ConditionRestoreCapabilities.Microphone, (_, token) => WindowsAudioPlayback.CreateRestorableSessionAsync(true, false, token), ConditionRestoreCapabilities.Validate, ConditionRestoreCapabilities.ResourceId),
             new RestorableSettingCapabilityProvider(ConditionRestoreCapabilities.PowerScheme, (_, token) => WindowsPowerScheme.CreateRestorableSessionAsync(token), ConditionRestoreCapabilities.Validate, ConditionRestoreCapabilities.ResourceId),
             new RestorableSettingCapabilityProvider(ConditionRestoreCapabilities.ProgramPriority, (parameters, token) => WindowsProgramPriority.CreateRestorableSessionAsync(ExecutablePaths.ValidatePath(parameters["executable"]), token), ConditionRestoreCapabilities.Validate, ConditionRestoreCapabilities.ResourceId),
-            new RestorableSettingCapabilityProvider(ConditionRestoreCapabilities.WindowState, (parameters, token) => WindowsWindowActions.CreateRestorableSessionAsync(ExecutablePaths.ValidatePath(parameters["executable"]), token), ConditionRestoreCapabilities.Validate, ConditionRestoreCapabilities.ResourceId)]);
+            new RestorableSettingCapabilityProvider(ConditionRestoreCapabilities.WindowState, (parameters, token) => WindowsWindowActions.CreateRestorableSessionAsync(ExecutablePaths.ValidatePath(parameters["executable"]), token), ConditionRestoreCapabilities.Validate, ConditionRestoreCapabilities.ResourceId)], new BrightnessWheelAgent(shortcuts, sid));
     }
 
     public async Task RunAsync()

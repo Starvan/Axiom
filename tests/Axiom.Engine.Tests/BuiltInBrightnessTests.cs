@@ -25,7 +25,7 @@ public sealed class BuiltInBrightnessTests
             Assert.Contains(plugin.Combinations, c => c.DetectionId == detection && c.ActionId == BuiltInBrightnessCapabilities.Set);
         Assert.Equal(RetryCategory.Never, Assert.Single(plugin.Bindings, b => b.Descriptor.Id == BuiltInBrightnessCapabilities.Set).Descriptor.Retry);
         Assert.Contains("所有活动内置面板", action.Descriptor.Description); Assert.Contains("主屏硬件路径需要DDC/CI", action.Descriptor.EditWarning);
-        Assert.Contains("自动选择", action.Descriptor.Name); Assert.Equal(4, action.Descriptor.Fields.Length);
+        Assert.Contains("自动选择", action.Descriptor.Name); Assert.Equal(5, action.Descriptor.Fields.Length);
     }
     [Theory]
     [InlineData("percent", "-1")]

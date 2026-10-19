@@ -51,7 +51,7 @@ public sealed class ScreenContentTests
         Assert.Equal(At(20), night.NextBoundary(At(8), TimeZoneInfo.Utc)); Assert.Equal(At(8).AddDays(1), night.NextBoundary(At(20), TimeZoneInfo.Utc));
         foreach (var invocation in new[] { Detection("20:00", ""), Detection("20:00", "20:00"), Detection("8:00", "20:00"),
             Detection() with { Parameters = Detection().Parameters.SetItem("exitPercent", "65") },
-            Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") },
+            Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "-1") },
             Detection() with { Parameters = Detection().Parameters.SetItem("enterPercent", "65.5") },
             Detection() with { Parameters = Detection().Parameters.Add("monitor", "all") }, Detection() with { SchemaVersion = 2 } })
             Assert.Throws<ArgumentException>(() => ScreenContentCapabilities.Validate(invocation));
@@ -60,6 +60,41 @@ public sealed class ScreenContentTests
         var zone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var spring = new ScreenContentSpec(65, 45, 3, 150, 240);
         Assert.Equal(new DateTimeOffset(2026, 3, 8, 7, 0, 0, TimeSpan.Zero), spring.NextBoundary(new(2026, 3, 8, 6, 59, 0, TimeSpan.Zero), zone));
+    }
+
+    [Fact]
+    public void ZeroStabilityEntersAndExitsImmediatelyWithHysteresisAndUnknownBaselineProtection()
+    {
+        var invocation = Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") };
+        var spec = ScreenContentCapabilities.Validate(invocation);
+        Assert.Equal(spec, ScreenContentCapabilities.ParseResource(spec.Resource)); Assert.Equal(0, spec.StableSeconds);
+        Assert.Equal(3, ScreenContentCapabilities.Validate(Detection()).StableSeconds);
+        var state = new ScreenContentState(spec.EnterPercent, spec.ExitPercent, TimeSpan.Zero);
+        Assert.True(state.Read(new(80), TimeSpan.Zero).Bright); Assert.Null(state.PendingAt);
+        Assert.True(state.Read(new(60), TimeSpan.Zero).Bright); Assert.Null(state.PendingAt);
+        Assert.False(state.Read(new(45), TimeSpan.Zero).Bright); Assert.Null(state.PendingAt);
+        Assert.Null(state.Unknown("HDR").Bright);
+        var recovered = state.Read(new(90), TimeSpan.Zero); Assert.True(recovered.Bright); Assert.True(recovered.Baseline);
+        Assert.False(state.OutsideWindow().Bright); Assert.Null(state.PendingAt);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task ZeroStabilityProviderPublishesTheFirstFrameImmediatelyWithoutAnyStabilityDeadline()
+    {
+        var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();
+        var updates = Channel.CreateUnbounded<ProviderUpdate>();
+        var provider = new ScreenContentCapabilityProvider(() => env, time, () => TimeZoneInfo.Utc);
+        var spec = ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") });
+        var run = provider.ObserveAsync([new(ScreenContentCapabilities.Bright, spec.Resource)], u => updates.Writer.TryWrite(u), stop.Token);
+        try
+        {
+            await Until(() => env.Captures.Count == 1);
+            env.Captures[0].Emit(new(80)); Assert.True((await Sample(updates.Reader, s => s.Boolean == true)).Boolean);
+            env.Captures[0].Emit(new(45)); Assert.False((await Sample(updates.Reader, s => s.Boolean == false)).Boolean);
+            Assert.Equal(0, time.GetTimestamp()); Assert.All(time.Timers, t => Assert.Null(t.At));
+        }
+        finally { stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); }
+        Assert.True(env.Captures[0].Disposed);
     }
 
     [Fact]

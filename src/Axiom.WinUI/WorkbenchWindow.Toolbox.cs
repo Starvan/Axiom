@@ -31,6 +31,7 @@ public sealed partial class WorkbenchWindow
         buttons.Children.Add(refresh); body.Children.Add(buttons); content.Children.Add(Card(body));
         content.Children.Add(Text("组只作为创建任务时的选择来源；自动更新不会改变已保存任务的进程名单。", 12, Muted));
         BuildTrayTool();
+        BuildBrightnessWheelTool();
     }
     private static string SteamStatusText(SteamToolSnapshot snapshot) => snapshot.Scanning ? "正在后台检查，刷新状态可查看最新结果。" :
         snapshot.LastScanUtc is null ? "尚未检查，开启自动更新或点击立即检查更新。" :

@@ -59,6 +59,7 @@ internal sealed partial class PluginTaskRuntime
     private async ValueTask<Outcome> ApplyRestorableAsync(DesiredState desired, CancellationToken token)
     {
         var id = Guid.NewGuid();
+        if (wheelTakenOver && IsBrightness(desired.Key.CapabilityId)) return new(OutcomeStatus.Rejected, "亮度已明确由手动接管，未捕获新基线。", id);
         if (stopping || desired.Key.Scope != scope || desired.Target.Schema != RestorableSettingInvocations.Schema || desired.Target.Text is null ||
             !bindings.TryGetValue(desired.Key.CapabilityId, out var binding) || !binding.Descriptor.DesiredState)
             return new(OutcomeStatus.Rejected, "条件恢复目标、权限或会话不匹配。", id);

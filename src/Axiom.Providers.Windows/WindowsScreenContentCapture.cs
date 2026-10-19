@@ -94,7 +94,7 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
                 finally { if (resource != 0) Marshal.Release(resource); }
                 // Keep ownership while idle, per ReleaseFrame's OS-copy guidance.
                 // Pointer-only frames have the same cap and do not run the shader.
-                stop.Token.WaitHandle.WaitOne(1000);
+                stop.Token.WaitHandle.WaitOne(250);
             }
         }
         catch (Exception) { if (!stop.IsCancellationRequested) publish(new(null, "主屏捕获或GPU统计已失效，等待显示或会话恢复通知后重建。", CaptureLost: true)); }

@@ -10,9 +10,9 @@ public sealed record ScreenContentSpec(int EnterPercent, int ExitPercent, int St
         (StartMinute is { } start && EndMinute is { } end ? FormattableString.Invariant($"{start / 60:00}:{start % 60:00}-{end / 60:00}:{end % 60:00}") : "*");
     public void Validate()
     {
-        if (EnterPercent is < 1 or > 100 || ExitPercent < 0 || ExitPercent >= EnterPercent || StableSeconds is < 1 or > 60 ||
+        if (EnterPercent is < 1 or > 100 || ExitPercent < 0 || ExitPercent >= EnterPercent || StableSeconds is < 0 or > 60 ||
             StartMinute.HasValue != EndMinute.HasValue || StartMinute is < 0 or > 1439 || EndMinute is < 0 or > 1439 || StartMinute.HasValue && StartMinute == EndMinute)
-            throw new ArgumentException("进入比例须大于退出比例，稳定时间为1–60秒；检测时段须同时填写不同的HH:mm起止时刻，或均留空表示全天。");
+            throw new ArgumentException("进入比例须大于退出比例，稳定时间为0–60秒；0表示立即响应。检测时段须同时填写不同的HH:mm起止时刻，或均留空表示全天。");
     }
     public bool Contains(DateTimeOffset now, TimeZoneInfo zone)
     {
@@ -50,10 +50,10 @@ public static class ScreenContentCapabilities
         "按主屏画面中较亮区域的面积检测，适合夜间自动降低屏幕亮度并在画面变暗后恢复；不限白色。",
         [new("enterPercent", "进入条件的明亮面积（%）", TaskFieldKind.Number, true, "64×36网格中，感知亮度达到70%的采样点比例。", "65", 3, [], Minimum: 1, Maximum: 100),
          new("exitPercent", "退出条件的明亮面积（%）", TaskFieldKind.Number, true, "低于或等于此比例才退出；须小于进入比例，避免反复调亮。", "45", 3, [], Minimum: 0, Maximum: 99),
-         new("stableSeconds", "画面变化稳定时间（秒）", TaskFieldKind.Number, true, "进入和退出均须连续稳定，默认3秒。", "3", 2, [], Minimum: 1, Maximum: 60),
+         new("stableSeconds", "画面变化稳定时间（秒）", TaskFieldKind.Number, true, "0表示立即进入和退出；1–60表示进入和退出均须连续稳定，默认3秒。", "3", 2, [], Minimum: 0, Maximum: 60),
          new("start", "检测开始（HH:mm，可选）", TaskFieldKind.Text, false, "与结束同时留空表示全天；例如20:00。时段外完全停止画面采集。", "", 5, [], Group: "检测时段"),
          new("end", "检测结束（HH:mm，可选）", TaskFieldKind.Text, false, "例如08:00，结束早于开始表示跨午夜；结束时立即释放亮度控制。", "", 5, [], Group: "检测时段")],
-        "只在有启用规则且处于本检测时段时共享采集主屏。最多每秒处理一次桌面更新，GPU稀疏采样后仅回读4字节统计；画面不保存、不编码、不发送。明亮/变暗经滞回和稳定时间后驱动现有条件亮度恢复动作。",
+        "只在有启用规则且处于本检测时段时共享采集主屏。桌面更新时最多每250毫秒处理一次，GPU稀疏采样后仅回读4字节统计；画面不保存、不编码、不发送。明亮/变暗经滞回和所选稳定时间后驱动现有条件亮度恢复动作，稳定时间为0时立即响应。",
         "仅支持SDR主屏，自动感知HDR并暂停；锁屏、睡眠、屏幕关闭、受保护内容或捕获失败为未知并释放亮度控制，恢复事件后重建。统计是画面相对感知亮度与面积，不是显示器背光或nits；稀疏采样有误差，系统未报告的受保护遮蔽无法识别。", IsStateCondition: true);
     public static ScreenContentSpec Validate(TaskInvocation invocation)
     {
