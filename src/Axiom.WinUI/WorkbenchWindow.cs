@@ -25,9 +25,18 @@ public sealed partial class WorkbenchWindow : Window
     private static readonly SolidColorBrush Soft = Color(233, 243, 238);
     private static readonly SolidColorBrush Amber = Color(139, 89, 20);
     private static readonly SolidColorBrush PaleAmber = Color(255, 246, 227);
+    private static readonly SolidColorBrush Rail = Color(24, 34, 47);
+    private static readonly SolidColorBrush RailInk = Color(233, 240, 247);
+    private static readonly SolidColorBrush RailMuted = Color(151, 169, 188);
+    private static readonly SolidColorBrush RailSelected = Color(40, 66, 69);
+    private static readonly SolidColorBrush RailAccent = Color(148, 228, 197);
+    private static readonly SolidColorBrush Blue = Color(65, 103, 168);
+    private static readonly SolidColorBrush BlueSoft = Color(234, 240, 251);
+    private static readonly SolidColorBrush Hover = Color(245, 248, 251);
+    private readonly FontIcon pageGlyph = new() { Glyph = "\uE8A5", FontSize = 22, Foreground = Accent };
     private StackPanel content = null!;
     private readonly ContentControl contentHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };
-    private readonly TextBlock pageTitle = Text("", 30, Ink, true);
+    private readonly TextBlock pageTitle = Text("", 28, Ink, true);
     private readonly TextBlock pageSubtitle = Text("", 14, Muted);
     private readonly TextBlock connection = Text("正在连接…", 12, Muted);
     private readonly InfoBar notice = new() { IsOpen = false, IsClosable = true };
@@ -77,20 +86,71 @@ public sealed partial class WorkbenchWindow : Window
         new() { Text = value, FontSize = size, Foreground = brush ?? Ink, FontWeight = new Windows.UI.Text.FontWeight { Weight = (ushort)(bold ? 600 : 400) }, TextWrapping = TextWrapping.Wrap };
     private static StackPanel Column(int spacing = 10) => new() { Spacing = spacing };
     private static StackPanel Row(int spacing = 10) => new() { Orientation = Orientation.Horizontal, Spacing = spacing };
-    private static Border Card(UIElement child, SolidColorBrush? background = null, int padding = 24) => new()
+    private static Border Card(UIElement child, SolidColorBrush? background = null, int padding = 20) => new()
     {
         Child = child, Background = background ?? Surface, BorderBrush = Line, BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(12), Padding = new Thickness(padding)
+        CornerRadius = new CornerRadius(14), Padding = new Thickness(padding)
     };
     private static Button Action(string label, bool primary = false) => new()
     {
-        Content = label, MinHeight = 38, Padding = new Thickness(16, 8, 16, 8), CornerRadius = new CornerRadius(7),
+        Content = label, MinHeight = 38, Padding = new Thickness(16, 8, 16, 8), CornerRadius = new CornerRadius(9),
         Background = primary ? Primary : Surface, Foreground = primary ? OnPrimary : Ink,
         HorizontalAlignment = HorizontalAlignment.Left
     };
+    private static Button Help(string message, string label = "了解更多")
+    {
+        var button = new Button { Content = new FontIcon { Glyph = "\uE946", FontSize = 14, Foreground = Muted },
+            Padding = new Thickness(6), MinWidth = 28, MinHeight = 28,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Left };
+        AutomationProperties.SetName(button, label);
+        ToolTipService.SetToolTip(button, message);
+        button.Flyout = new Flyout { Content = new ScrollViewer { MaxHeight = 300,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 360, IsTextSelectionEnabled = true } } };
+        return button;
+    }
+    private static Expander Details(string label, UIElement child) => new() { Header = label, Content = child,
+        HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private static TextBlock Preview(string value, int size = 13, SolidColorBrush? brush = null, bool bold = false)
+    {
+        var text = Text(value, size, brush, bold); text.MaxLines = 1; text.TextTrimming = TextTrimming.CharacterEllipsis;
+        ToolTipService.SetToolTip(text, value); return text;
+    }
+    private static Grid ToolHeading()
+    {
+        var heading = new Grid { ColumnSpacing = 12, RowSpacing = 8 };
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        return heading;
+    }
+    private static void PlaceToolToggle(Grid heading, ToggleSwitch toggle)
+    {
+        AutomationProperties.SetName(toggle, toggle.Header?.ToString() ?? "启用工具");
+        toggle.Header = null; toggle.VerticalAlignment = VerticalAlignment.Center;
+        heading.Children.Add(toggle);
+        void Fit()
+        {
+            var narrow = heading.ActualWidth < 520;
+            Grid.SetRow(toggle, narrow ? 1 : 0); Grid.SetColumn(toggle, narrow ? 1 : 2);
+            Grid.SetColumnSpan(toggle, narrow ? 2 : 1);
+        }
+        heading.SizeChanged += (_, _) => Fit(); Fit();
+    }
+    private static Border CategoryTile(string? category, int size = 36)
+    {
+        var program = category is "程序" or "窗口" or "系统" or "Axiom";
+        var glyph = category switch { "显示" => "\uE7F4", "程序" => "\uE756", "窗口" => "\uE737", "声音" or "音频" => "\uE767",
+            "键盘" => "\uE765", "时间" => "\uE787", "网络" => "\uE774", "电源" => "\uE7E8", "文件夹" => "\uE8B7", _ => "\uE945" };
+        return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(10),
+            Background = program ? BlueSoft : Soft, VerticalAlignment = VerticalAlignment.Center,
+            Child = new FontIcon { Glyph = glyph, FontSize = 17, Foreground = program ? Blue : Accent } };
+    }
     private static Border Badge(string label, bool paused = false) => new()
     {
-        Background = paused ? Canvas : Soft, CornerRadius = new CornerRadius(5), Padding = new Thickness(9, 4, 9, 4),
+        Background = paused ? Canvas : Soft, CornerRadius = new CornerRadius(12), Padding = new Thickness(9, 4, 9, 4),
         HorizontalAlignment = HorizontalAlignment.Left, Child = Text(label, 12, paused ? Muted : Accent, true)
     };
     private ContentControl BuildShell()
@@ -98,28 +158,37 @@ public sealed partial class WorkbenchWindow : Window
         shellGrid = new Grid { Background = Canvas };
         shellGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         shellGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var side = new Grid { Background = Surface, Padding = new Thickness(18, 30, 18, 24) };
+        var side = new Grid { Background = Rail, Padding = new Thickness(14, 20, 14, 20) };
         side.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         side.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var nav = Column(8);
+        var nav = Column(6);
+        var navLabel = Text("工作空间", 11, RailMuted, true); navLabel.Margin = new Thickness(14, 0, 0, 14); nav.Children.Add(navLabel);
         AddNavigation(nav, Page.Rules, "自动化", "\uE8A5");
-        AddNavigation(nav, Page.Groups, "组", "\uE8F1");
+        AddNavigation(nav, Page.Groups, "程序组", "\uE8F1");
         AddNavigation(nav, Page.Toolbox, "工具箱", "\uE90F");
         AddNavigation(nav, Page.Usage, "使用观察", "\uE9D9");
         AddNavigation(nav, Page.Activity, "活动记录", "\uE81C");
-        AddNavigation(nav, Page.Settings, "设置", "\uE713");
+
         side.Children.Add(nav);
-        sideNote = Column(8);
+        sideNote = Column(14);
+        AddNavigation(sideNote, Page.Settings, "设置", "\uE713");
+        connection.Foreground = RailMuted; connection.Margin = new Thickness(12, 0, 0, 0);
+        ToolTipService.SetToolTip(connection, "关闭窗口后，已启用的任务继续在后台工作。");
         sideNote.Children.Add(connection);
-        sideNote.Children.Add(Text("关闭窗口，后台继续工作", 11, Muted));
         Grid.SetRow(sideNote, 1); side.Children.Add(sideNote);
         shellGrid.Children.Add(side);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         pageScroll = scroll;
         pageScroll.SizeChanged += (_, _) => QueueActivityViewportRefresh();
-        var body = Column(24);
-        body.Padding = new Thickness(36, 34, 36, 32);
-        var heading = Column(7); heading.Children.Add(pageTitle); heading.Children.Add(pageSubtitle);
+        var body = Column(18);
+        body.Padding = new Thickness(32, 24, 32, 28);
+        var heading = new Grid { ColumnSpacing = 14, Margin = new Thickness(0, 0, 0, 4) };
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.Children.Add(new Border { Width = 48, Height = 48, Background = Soft, CornerRadius = new CornerRadius(15),
+            VerticalAlignment = VerticalAlignment.Center, Child = pageGlyph });
+        var headingText = Column(4); headingText.Children.Add(pageTitle); headingText.Children.Add(pageSubtitle);
+        Grid.SetColumn(headingText, 1); heading.Children.Add(headingText);
         body.Children.Add(heading); body.Children.Add(contentHost);
         scroll.Content = body;
         var main = new Grid();
@@ -130,17 +199,20 @@ public sealed partial class WorkbenchWindow : Window
         bottom.Margin = new Thickness(24, 0, 24, 16);
         Grid.SetRow(bottom, 1); main.Children.Add(bottom);
         Grid.SetColumn(main, 1); shellGrid.Children.Add(main);
+        var titleRail = new Border { Width = 200, Background = Rail, HorizontalAlignment = HorizontalAlignment.Left };
         shellGrid.SizeChanged += (_, args) =>
         {
             var compact = args.NewSize.Width < 850;
             shellGrid.ColumnDefinitions[0].Width = new GridLength(compact ? 150 : 200);
-            body.Padding = new Thickness(compact ? 18 : 36, 30, compact ? 18 : 36, 30);
-            sideNote.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+            body.Padding = new Thickness(compact ? 20 : 32, 24, compact ? 20 : 32, 24);
+            titleRail.Width = compact ? 150 : 200;
+            sideNote.Visibility = Visibility.Visible;
         };
-        var title = new Grid { Height = 48, Background = Canvas };
+        var title = new Grid { Height = 52, Background = Canvas };
+        title.Children.Add(titleRail);
         var brand = Row(10); brand.Margin = new Thickness(24, 0, 0, 0); brand.VerticalAlignment = VerticalAlignment.Center;
         brand.Children.Add(new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/Axiom.png")), Width = 26, Height = 26 });
-        brand.Children.Add(Text("Axiom", 16, Ink, true)); title.Children.Add(brand);
+        brand.Children.Add(Text("Axiom", 17, RailInk, true)); title.Children.Add(brand);
         var root = new Grid { Background = Canvas };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -156,11 +228,22 @@ public sealed partial class WorkbenchWindow : Window
     private void AddNavigation(StackPanel panel, Page target, string label, string glyph)
     {
         var button = Action(label);
-        var row = Row(12);
-        row.Children.Add(new FontIcon { Glyph = glyph, FontSize = 17, Foreground = Muted });
-        row.Children.Add(Text(label, 14, Ink, true));
+        button.MinHeight = 44; button.Padding = new Thickness(8, 8, 12, 8);
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(19) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.Children.Add(new Border { Width = 3, Height = 20, CornerRadius = new CornerRadius(2),
+            Background = RailAccent, Opacity = 0, VerticalAlignment = VerticalAlignment.Center });
+        var icon = new FontIcon { Glyph = glyph, FontSize = 17, Foreground = RailMuted }; Grid.SetColumn(icon, 1); row.Children.Add(icon);
+        var caption = Text(label, 14, RailInk); caption.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(caption, 2); row.Children.Add(caption);
         button.Content = row; button.HorizontalAlignment = HorizontalAlignment.Stretch;
-        button.HorizontalContentAlignment = HorizontalAlignment.Left; button.BorderThickness = new Thickness(0);
+        button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.BorderThickness = new Thickness(0);
+        button.Resources["ButtonBackgroundPointerOver"] = RailSelected;
+        button.Resources["ButtonBackgroundPressed"] = RailSelected;
+        button.Resources["ButtonForegroundPointerOver"] = RailInk;
+        button.Resources["ButtonForegroundPressed"] = RailInk;
         AutomationProperties.SetName(button, label);
         button.Click += async (_, _) =>
         {
@@ -180,27 +263,39 @@ public sealed partial class WorkbenchWindow : Window
     {
         if (closed) return;
         SyncRunStatesWatch();
-        foreach (var (key, button) in navigation) button.Background = key == page ? Soft : Surface;
+        foreach (var (key, button) in navigation)
+        {
+            var selected = key == page;
+            button.Background = selected ? RailSelected : Rail;
+            if (button.Content is Grid row)
+            {
+                row.Children[0].Opacity = selected ? 1 : 0;
+                ((FontIcon)row.Children[1]).Foreground = selected ? RailAccent : RailMuted;
+                ((TextBlock)row.Children[2]).Foreground = selected ? RailAccent : RailInk;
+            }
+        }
+        pageGlyph.Glyph = page switch { Page.Rules => "\uE8A5", Page.Groups => "\uE8F1", Page.Toolbox => "\uE90F",
+            Page.Usage => "\uE9D9", Page.Activity => "\uE81C", _ => "\uE713" };
         (pageTitle.Text, pageSubtitle.Text) = page switch
         {
             Page.Rules when editing => (editor.Version == 0 ? "新建任务" : "编辑任务", "选择检测什么，再决定执行什么。"),
             Page.Rules => ("我的自动化", "设定一次，日常交给 Axiom。"),
             Page.Groups when groupEditing => (groupDraft?.Version == 0 ? "新建进程组" : "编辑进程组", "整理一次，配置任务时随手选择。"),
             Page.Groups when viewingProcessGroups => ("进程组", "整理程序名单，在不同任务中重复使用。"),
-            Page.Groups => ("组", "把常用选择放在一起。"),
+            Page.Groups => ("程序组", "把常用选择放在一起。"),
             Page.Toolbox => ("工具箱", "省去重复整理的时间。"),
             Page.Usage => ("使用观察", "主动记录一段过程，发现值得自动化的环节。"),
-            Page.Activity => ("活动记录", "发生了什么，为什么。每一次活动都可回看。"),
+            Page.Activity => ("活动记录", "查看执行结果与需要留意的事。"),
             _ => ("设置", "按你的习惯使用 Axiom。")
         };
         connection.Text = reachable ? "●  后台已连接" : "○  后台状态未确认";
         // Build a detached page and replace it once. Clearing the live child vector
         // can invalidate WinUI accessibility peers while an edit invocation is returning.
-        content = new StackPanel { Spacing = 20, HorizontalAlignment = HorizontalAlignment.Stretch };
+        content = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Stretch };
         footer = Row(10);
         footer.IsHitTestVisible = !busy;
         footer.Visibility = editing && page == Page.Rules || groupEditing && page == Page.Groups ? Visibility.Visible : Visibility.Collapsed;
-        content.MaxWidth = editing && page == Page.Rules ? 780 : 940;
+        content.MaxWidth = editing && page == Page.Rules ? 780 : double.PositiveInfinity;
         switch (page) { case Page.Rules: if (editing) BuildEditor(); else BuildRules(); break; case Page.Groups: BuildGroups(); break;
             case Page.Toolbox: BuildToolbox(); break; case Page.Usage: BuildUsage(); break; case Page.Activity: BuildActivity(); break; default: BuildSettings(); break; }
         contentHost.Content = content;
@@ -286,7 +381,9 @@ public sealed partial class WorkbenchWindow : Window
     private async Task ToggleRuleAsync(AutomationTask rule)
     {
         if (busy || closed) return;
-        if (!rule.Paused && !await ConfirmAsync("暂停这个任务？", ActionWarning(rule.Action) + " 暂停后不再检测。", "暂停")) return;
+        var warning = ActionWarning(rule.Action);
+        if (!rule.Paused && !string.IsNullOrWhiteSpace(warning) &&
+            !await ConfirmAsync("暂停这个任务？", warning, "暂停")) return;
         await MutateAsync(new(1, "save", Guid.NewGuid().ToString("N"), Task: rule with { Paused = !rule.Paused }), "saved", rule.Paused ? "已启用，等待检测条件。" : "已暂停。设置已保留。", false);
     }
     private async Task DeleteAsync()

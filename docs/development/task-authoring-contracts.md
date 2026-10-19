@@ -33,6 +33,8 @@ WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提�
 
 `AxiomStartupPlugin` 提供 `axiom.started`（schema 1）：Choice 参数 `frequency=every|firstBoot`，与程序启动/关闭组合。事件来自 Host 本身，加载时启用且版本未变的规则在 Agent 首次就绪、完整资源计划确认后收到 false → true；保留 true 让现有 Engine 支持动作延迟。UI 重开、Agent 重连、运行中新建/编辑/启用不产生启动事件；修改、暂停、删除或连接中断取消未执行延迟，不补发。
 
+主动调整无关检测资源（例如HDR门禁恢复内层观察）不属于Agent断线：若启动资源集合不变且不要求全新基线，保留Host启动源的epoch、序列和已知值，等待新订阅就绪再接受新的工具请求。不撤销已有启动动作，也不重新发出启动边沿。真实连接中断、启动资源变化、强制新基线与停止仍释放原源并遵守取消/不补发；不能用重试掩盖取消。
+
 首次是当前用户本次 Windows 开机第一次启动后台，不是各条规则分别第一次执行。Host 每次启动只读取一次 Windows 注册表 BootId，并在 `tasks.db` 的 `host_startup` 单行表事务认领；库 schema 原地升级至 2，不改既有配置、不备份。即使没有启动规则也记录首次，错过/暂停/执行失败/取消/崩溃均不自动补发。BootId 或持久化不可用时首次观察为 Unknown 并记录原因，每次启动仍可触发。BootId 来源见 [微软文档](https://learn.microsoft.com/windows-hardware/design/device-experiences/oem-hvci-enablement)；本轮未实际重启电脑验证快速启动/休眠组合。
 
 当前一次检测配一个动作；AND/OR 编辑、多步骤任务未实现。延迟、窗口状态、重复实例和关闭策略是程序能力真实参数；活动历史已持久化。测试中的会话检测/消息动作仍不代表系统会话通知功能已交付。
@@ -47,7 +49,9 @@ WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提�
 
 会话 Invoke 的管道对端断开时立即取消调用 token；暂停/删除取消尚在等待的窗口动作，不能在 Host 已取消后仍等待后续窗口并关闭。已发出的关闭消息无法撤销。通知溢出/不可用或窗口仍显示返回失败/原因；命令回执不能用于推断持续后台状态。窗口通知仅用于该动作的有限等待，原进程检测继续使用原生进程事件。
 
-`TrayPlugin` 提供 `tray.hide`（schema 1），与 `process.running` / `process.exited` / `axiom.started` 组合，声明 `TraySelection` 完整路径多选（最多 32）、等待图标 1–30 秒和 Engine 延迟 0–86400 秒。TraySelection 复用 ExecutableSelection 的名单/批量输入和校验，增加当前托盘搜索、多选、刷新面板；选择仅保存 executable 换行完整路径，旧 schema/单路径不迁移，暂无图标的原目标保留。Host 转发 Agent 的只读发现与动作共用核验，不因选取而立即执行；UI 按字段类型渲染，无具体能力 ID 分支。同一 WindowsProgramBatch 汇总逐项结果；匹配当前用户/会话/完整路径，普通 ID 核对窗口（含 message-only），除缓存 UID 外额外核验当前 HWND 数值 UID；GUID 核对系统路径且拒绝归属冲突，公开 Shell_NotifyIcon 删除并确认。注册表/Explorer 通知只在等待期间共享，末订阅释放，无轮询。一次触发移除当前可识别图标，重建后可能再出现，暂停不恢复。未知身份记录/UID 明确失败，不用折叠假成功，不注入或修改全局偏好；决策见 [ADR 0010](../adr/0010-tray-icon-discovery.md)。
+`TrayPlugin` 提供 `tray.hide`（schema 1），与 `process.running` / `process.exited` / `axiom.started` 组合，声明 `TraySelection` 完整路径多选（最多 32）、等待图标 1–120 秒和 Engine 延迟 0–86400 秒。TraySelection 复用 ExecutableSelection 的名单/批量输入和校验，增加当前托盘搜索、多选、刷新面板；选择仅保存 executable 换行完整路径，旧 schema/单路径不迁移，暂无图标的原目标保留。Host 转发 Agent 的只读发现与动作共用核验，不因选取而立即执行；UI 按字段类型渲染，无具体能力 ID 分支。同一 WindowsProgramBatch 汇总逐项结果；匹配当前用户/会话/完整路径，普通 ID 核对窗口（含 message-only），除缓存 UID 外额外核验当前 HWND 数值 UID；GUID 核对系统路径且拒绝归属冲突，公开 Shell_NotifyIcon 删除并确认。注册表/Explorer 通知只在等待期间共享，末订阅释放，无轮询。一次触发移除当前可识别图标，重建后可能再出现，暂停不恢复。未知身份记录/UID 明确失败，不用折叠假成功，不注入或修改全局偏好；决策见 [ADR 0010](../adr/0010-tray-icon-discovery.md)。
+
+托盘等待的命令期限为130秒，Provider仅对已通过参数校验的tray.hide Invoke接受最长135秒的请求；其他Provider操作维持45秒上限。目标仍并行等待，退出/暂停立即取消，不增加轮询。
 
 ## 内置插件模块接入步骤
 

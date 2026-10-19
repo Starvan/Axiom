@@ -12,14 +12,15 @@ public sealed partial class WorkbenchWindow
 
     private void BuildTrayTool()
     {
-        var body = Column(14); var heading = Row(14);
-        heading.Children.Add(new FontIcon { Glyph = "\uE7F4", FontSize = 24, Foreground = Accent });
-        heading.Children.Add(Text(TrayTool.Name, 20, Ink, true)); body.Children.Add(heading);
+        var body = Column(12); var heading = ToolHeading();
+        heading.Children.Add(new Border { Width = 40, Height = 40, Background = Soft, CornerRadius = new CornerRadius(10),
+            Child = new FontIcon { Glyph = "\uE7F4", FontSize = 20, Foreground = Accent } });
+        var headingText = Text(TrayTool.Name, 18, Ink, true); headingText.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(headingText, 1); heading.Children.Add(headingText); body.Children.Add(heading);
         body.Children.Add(Text("多选需要隐藏托盘图标的程序，选择启动时隐藏一次或持续隐藏。保留后台进程。", 14, Muted));
         var toggle = new ToggleSwitch { Header = "启用托盘管理", OnContent = "已启用", OffContent = "已关闭", IsOn = trayTool?.Settings.Enabled == true,
             IsEnabled = reachable && trayTool is { Settings.Executables.Length: > 0 } };
         toggle.Toggled += async (_, _) => { if (trayTool is not null) await SaveTrayToolSettingsAsync(trayTool.Settings with { Enabled = toggle.IsOn }); };
-        body.Children.Add(toggle);
+        PlaceToolToggle(heading, toggle);
         if (trayTool is not null)
         {
             body.Children.Add(Text($"{trayTool.Settings.Executables.Length} 个程序 · {TrayModeText(trayTool.Settings.Mode)} · 最多等待 {trayTool.Settings.WaitSeconds} 秒", 13, Muted));
@@ -27,7 +28,7 @@ public sealed partial class WorkbenchWindow
             if (trayTool.LastRunUtc is { } at) body.Children.Add(Text($"上次结果：{TrayResultText(trayTool.LastStatus)} · {at.ToLocalTime():MM-dd HH:mm:ss}（详情见工具设置）", 12, Muted));
         }
         if (trayToolError is not null) body.Children.Add(Text(trayToolError, 12, Amber));
-        body.Children.Add(Text("开启或启用时保存名单，会先处理当前图标一次；之后按所选模式运行。关闭窗口不影响，关闭工具会停止未来操作。", 12, Muted));
+        body.Children.Add(Help("开启或启用时保存名单，会先处理当前图标一次；之后按所选模式运行。关闭窗口不影响，关闭工具会停止未来操作。"));
         var actions = Row(10); var settings = Action("工具设置"); settings.IsEnabled = reachable;
         settings.Click += async (_, _) => await OpenTrayToolSettingsAsync(); actions.Children.Add(settings);
         var hide = Action("立即隐藏"); hide.IsEnabled = reachable && trayTool?.Settings.Enabled == true;
@@ -39,7 +40,7 @@ public sealed partial class WorkbenchWindow
         body.Children.Add(Text("隐藏后托盘菜单和气泡通知可能不可用。关闭不恢复已隐藏图标；可重新打开或重启目标软件恢复。", 12, Amber));
         content.Children.Add(Card(body));
     }
-    private static string TrayModeText(string mode) => mode == TrayTool.Continuous ? "持续隐藏（系统通知）" : "仅 Axiom 后台启动时隐藏一次";
+    private static string TrayModeText(string mode) => mode == TrayTool.Continuous ? "持续隐藏" : "启动时隐藏一次";
     private static string TrayResultText(OutcomeStatus? status) => status == OutcomeStatus.Succeeded ? "本次已完成" : status == OutcomeStatus.Unknown ? "未确认" : "本次未完成";
     private async Task ReadTrayToolAsync()
     {
@@ -96,10 +97,10 @@ public sealed partial class WorkbenchWindow
             modes.SelectedIndex = mode == TrayTool.Continuous ? 1 : 0;
             modes.SelectionChanged += (_, _) => mode = modes.SelectedIndex == 1 ? TrayTool.Continuous : TrayTool.Startup;
             body.Children.Add(modes);
-            body.Children.Add(Text("仅启动：软件或资源管理器重建图标后可能再出现，可点击立即隐藏。\n持续：订阅系统通知，发现名单内图标重新出现后再隐藏；没有定时扫描。", 12, Muted));
+            body.Children.Add(Help("仅启动：软件或资源管理器重建图标后可能再出现，可点击立即隐藏。\n持续：订阅系统通知，发现名单内图标重新出现后再隐藏；没有定时扫描。"));
             var wait = new TextBox { Header = "等待托盘图标出现（秒）", Text = waitText, MaxLength = 8 };
             wait.TextChanged += (_, _) => waitText = wait.Text; body.Children.Add(wait);
-            body.Children.Add(Text("填写 1–30 的整数秒。已有图标立即隐藏；尚未出现时，最多等待所设秒数的系统通知。每个程序分别等待，超时会说明未找到。启动较慢可设为 30 秒；这不是固定延迟。", 12, Muted));
+            body.Children.Add(Help($"填写 1–{TrayCapabilities.MaximumWaitSeconds} 的整数秒。已有图标立即隐藏；尚未出现时，最多等待所设秒数的系统通知。每个程序分别等待，超时会说明未找到。开机启动较慢可设为 60 秒；这不是固定延迟。"));
             var toggle = new ToggleSwitch { Header = "启用托盘管理", OnContent = "已启用", OffContent = "已关闭", IsOn = enabled };
             toggle.Toggled += (_, _) => enabled = toggle.IsOn; body.Children.Add(toggle);
             body.Children.Add(Text("启用或启用时保存会处理当前图标一次。关闭只停止未来操作，不恢复已隐藏图标。系统版本、权限或未知图标身份可能使识别/隐藏失败，结果会说明。", 12, Amber));
@@ -128,8 +129,8 @@ public sealed partial class WorkbenchWindow
             {
                 try
                 {
-                    if (!int.TryParse(wait.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.CurrentCulture, out var seconds) || seconds is < 1 or > 30)
-                        throw new ArgumentException("等待托盘图标出现的时间须为 1–30 的整数秒。");
+                    if (!int.TryParse(wait.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.CurrentCulture, out var seconds) || seconds is < 1 or > TrayCapabilities.MaximumWaitSeconds)
+                        throw new ArgumentException($"等待托盘图标出现的时间须为 1–{TrayCapabilities.MaximumWaitSeconds} 的整数秒。");
                     waitSeconds = seconds;
                     TrayTool.Validate(new(original.Version, enabled, mode, [.. selection.Names], waitSeconds));
                 }

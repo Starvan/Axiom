@@ -45,8 +45,9 @@ public sealed partial class WorkbenchWindow
     }
     private void BuildUsage()
     {
-        content.Children.Add(Text("仅在你开启后记录选定的应用、会话、供电、低电量、显示模式、USB类别、默认音频及网络可用性元数据；不采集窗口标题、正文、按键、剪贴板、截图或命令行。关闭此窗口立即结束观察；自动化规则继续工作。", 14, Muted));
-        content.Children.Add(Text("最多 120 分钟、4096 条事件、128 个应用；本地最多保留 12 次、7 天。未知来源不能当作手动操作。", 12, Muted));
+        content.Children.Add(Text("记录一段使用过程，寻找可自动化的日常操作。关闭窗口即结束观察。", 14, Muted));
+        content.Children.Add(Help("仅在你开启后记录选定的应用、会话、供电、低电量、显示模式、USB类别、默认音频及网络可用性元数据；不采集窗口标题、正文、按键、剪贴板、截图或命令行。关闭此窗口立即结束观察；自动化规则继续工作。", "会记录哪些内容"));
+        content.Children.Add(Help("最多 120 分钟、4096 条事件、128 个应用；本地最多保留 12 次、7 天。未知来源不能当作手动操作。", "记录范围与保留期限"));
         var actions = Row(8);
         var start = Action("开始观察", true); start.IsEnabled = reachable && usageSnapshot?.ActiveId is null; start.Click += async (_, _) => await StartUsageAsync(); actions.Children.Add(start);
         var refresh = Action("刷新状态"); refresh.Click += async (_, _) => await UsageCommandAsync("read"); actions.Children.Add(refresh);
@@ -66,9 +67,9 @@ public sealed partial class WorkbenchWindow
                 catch (Exception error) { ShowNotice(error.Message); }
             }; catalogButtons.Children.Add(button);
         }
-        content.Children.Add(catalogButtons);
+        content.Children.Add(Details("高级 · 导出能力资料", catalogButtons));
         if (usageSnapshot is null) { content.Children.Add(Text("尚未读取观察状态。", 13, Muted)); return; }
-        content.Children.Add(Text($"状态读取于 {usageSnapshot.ReadAtUtc.ToLocalTime():HH:mm:ss}，无定时轮询。", 12, Muted));
+        content.Children.Add(Text($"状态读取于 {usageSnapshot.ReadAtUtc.ToLocalTime():HH:mm:ss}。", 12, Muted));
         var sessions = new ComboBox { Header = "本地观察记录", HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = usageSnapshot.Sessions.Select(s => $"{s.StartedUtc.ToLocalTime():MM-dd HH:mm} · {StateName(s.State)}").ToArray() };
         var selected = usageSnapshot.Selected;
         sessions.SelectedIndex = Array.FindIndex(usageSnapshot.Sessions, s => s.Id == selected?.Id);

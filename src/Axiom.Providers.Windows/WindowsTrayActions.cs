@@ -119,7 +119,7 @@ public static class WindowsTrayActions
     }
     public static async Task<ProgramControlResult> HideAsync(string path, TimeSpan wait, CancellationToken token)
     {
-        if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(wait));
+        if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(120)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
         using var notifications = new WindowsTrayEvents();

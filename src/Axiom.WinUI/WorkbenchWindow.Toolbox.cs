@@ -13,15 +13,16 @@ public sealed partial class WorkbenchWindow
 
     private void BuildToolbox()
     {
-        content.Children.Add(Text("发现与整理", 14, Muted));
-        var body = Column(16); var heading = Row(14);
-        heading.Children.Add(new FontIcon { Glyph = "\uE7F8", FontSize = 24, Foreground = Accent });
-        heading.Children.Add(Text("Steam 游戏自动整理", 20, Ink, true)); body.Children.Add(heading);
+
+        var body = Column(12); var heading = ToolHeading();
+        heading.Children.Add(new Border { Width = 40, Height = 40, Background = BlueSoft, CornerRadius = new CornerRadius(10),
+            Child = new FontIcon { Glyph = "\uE7F8", FontSize = 20, Foreground = Blue } });
+        var headingText = Text("Steam 游戏自动整理", 18, Ink, true); headingText.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(headingText, 1); heading.Children.Add(headingText); body.Children.Add(heading);
         body.Children.Add(Text($"检查本机 Steam 安装项目，自动维护“{SteamTool.GroupName}”进程组。", 14, Muted));
         var toggle = new ToggleSwitch { Header = "每次 Axiom 启动时检查更新", OnContent = "已开启", OffContent = "已关闭",
             IsOn = steamTool?.Settings.Enabled == true, IsEnabled = reachable && steamTool is not null };
-        toggle.Toggled += async (_, _) => await SetSteamEnabledAsync(toggle.IsOn); body.Children.Add(toggle);
-        body.Children.Add(Text("开启后立即检查一次，之后每次后台启动更新；关闭窗口不影响。关闭此开关会保留已有组。", 12, Muted));
+        toggle.Toggled += async (_, _) => await SetSteamEnabledAsync(toggle.IsOn); PlaceToolToggle(heading, toggle);
+        ToolTipService.SetToolTip(toggle, "开启后立即检查，之后每次后台启动更新。关闭后保留已有程序组。");
         if (steamTool is not null) body.Children.Add(Text(SteamStatusText(steamTool), 13, Muted));
         if (steamToolError is not null || steamTool?.Error is not null) body.Children.Add(Text(steamToolError ?? steamTool!.Error!, 12, Amber));
         var buttons = Row(10); var settings = Action("工具设置"); settings.IsEnabled = reachable;
@@ -29,7 +30,7 @@ public sealed partial class WorkbenchWindow
         var refresh = Action("立即检查更新"); refresh.IsEnabled = reachable;
         refresh.Click += async (_, _) => { if (busy) return; SetBusy(true); try { await RefreshSteamToolAsync(); await ReadGroupsAsync(); } finally { SetBusy(false); Render(); } };
         buttons.Children.Add(refresh); body.Children.Add(buttons); content.Children.Add(Card(body));
-        content.Children.Add(Text("组只作为创建任务时的选择来源；自动更新不会改变已保存任务的进程名单。", 12, Muted));
+        ToolTipService.SetToolTip(headingText, "自动更新程序组，不改变已保存任务的名单。");
         BuildTrayTool();
         BuildBrightnessWheelTool();
     }

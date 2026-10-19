@@ -23,8 +23,8 @@ public sealed partial class WorkbenchWindow
         if (!double.IsFinite(height) || height <= 0) return 4;
         // A card row contains a title, detail and metadata. Reserve the heading,
         // toolbar and date labels so a page contains only complete visible rows.
-        var rowHeight = width < 760 ? 150 : 132;
-        var available = Math.Max(200, height - 210);
+        var rowHeight = width < 760 ? 104 : 92;
+        var available = Math.Max(200, height - 180);
         return Math.Clamp((int)Math.Floor(available / rowHeight), 1, 64);
     }
 
@@ -55,7 +55,7 @@ public sealed partial class WorkbenchWindow
         clear.Click += async (_, _) => await ClearOldActivityAsync();
         Grid.SetColumn(clear, 1); actions.Children.Add(clear);
         toolbar.Children.Add(actions);
-        toolbar.Children.Add(Text("记录保存在本机，重启后仍可查看。清理只删除超过七天的记录。", 12, Muted));
+        ToolTipService.SetToolTip(clear, "保留最近七天的记录，清理后无法撤销");
         content.Children.Add(toolbar);
 
         if (activityError is not null || activity?.Error is not null || !reachable)
@@ -89,7 +89,7 @@ public sealed partial class WorkbenchWindow
                 }
                 var entry = record.Event;
                 var warning = entry.Level is ActivityLevel.Warning or ActivityLevel.Error;
-                var row = new Grid { ColumnSpacing = 14, Padding = new Thickness(20, 18, 20, 18) };
+                var row = new Grid { ColumnSpacing = 14, Padding = new Thickness(16, 10, 16, 10) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 var icon = new FontIcon { Glyph = entry.Level switch { ActivityLevel.Success => "\uE73E",
@@ -100,9 +100,22 @@ public sealed partial class WorkbenchWindow
                     ActivityLevel.Error => "异常", _ => "活动" });
                 row.Children.Add(icon);
                 var body = Column(6);
-                body.Children.Add(Text(entry.Title, 16, Ink, true));
-                if (!string.IsNullOrEmpty(entry.Subject)) body.Children.Add(Text(entry.Subject, 13, Accent));
-                body.Children.Add(Text(entry.Detail, 13, Muted));
+                body.Children.Add(Preview(entry.Title, 14, Ink, true));
+                if (!string.IsNullOrEmpty(entry.Subject)) body.Children.Add(Preview(entry.Subject, 12, Accent));
+                if (!string.IsNullOrWhiteSpace(entry.Detail))
+                {
+                    if (warning) body.Children.Add(Text(entry.Detail, 13, Amber));
+                    else
+                    {
+                        var detail = new Grid { ColumnSpacing = 8 };
+                        detail.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                        detail.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                        var preview = Preview(entry.Detail, 13, Muted); preview.VerticalAlignment = VerticalAlignment.Center;
+                        detail.Children.Add(preview);
+                        var help = Help(entry.Detail, "活动详情"); Grid.SetColumn(help, 1); detail.Children.Add(help);
+                        body.Children.Add(detail);
+                    }
+                }
                 body.Children.Add(Text($"{local:HH:mm:ss}  ·  {entry.Category}", 11, Muted));
                 Grid.SetColumn(body, 1); row.Children.Add(body);
                 rows!.Children.Add(new Border { Child = row, BorderBrush = Line,

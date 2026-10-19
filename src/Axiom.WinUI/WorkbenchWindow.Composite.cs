@@ -27,14 +27,14 @@ public sealed partial class WorkbenchWindow
         string Describe(TaskDetectionExpression node) => node.Kind == "leaf" ? node.Invocation is null ? "待选择条件" : Summary(node.Invocation, TaskCapabilityKind.Detection) :
             GroupLabel(node.Kind) + "（" + string.Join("；", node.Children.IsDefault ? Enumerable.Empty<string>() : node.Children.Select(Describe)) + "）";
     }
-    private static string GroupLabel(string kind) => kind switch { "all" => "全部满足", "any" => "任一满足", "not" => "取反", _ => "条件暂不可用" };
+    private static string GroupLabel(string kind) => kind switch { "all" => "全部满足", "any" => "任一满足", "not" => "不满足此条件", _ => "条件暂不可用" };
     private Border BuildDetectionSection(Action<TaskCapabilityKind> changed)
     {
         var supported = status?.CompositeDetectionVersion >= 1;
         if (!supported && !editor.Composite)
             return BuildCapabilitySection(TaskCapabilityKind.Detection, "01   检测什么", "选择需要检测的状态或事件。", editor.Detection, changed);
         var panel = Column(12); panel.Children.Add(Text("01   检测什么", 18, Ink, true));
-        var mode = new ComboBox { Header = "检测方式", ItemsSource = new[] { "单个检测", "组合持续状态" }, SelectedIndex = editor.Composite ? 1 : 0,
+        var mode = new ComboBox { Header = "检测方式", ItemsSource = new[] { "单个检测", "多个条件" }, SelectedIndex = editor.Composite ? 1 : 0,
             HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = supported };
         mode.SelectionChanged += (_, _) =>
         {
@@ -50,11 +50,11 @@ public sealed partial class WorkbenchWindow
         panel.Children.Add(mode);
         if (!editor.Composite)
         {
-            panel.Children.Add(BuildCapabilitySection(TaskCapabilityKind.Detection, "单个检测", "检测一种事件或持续状态。", editor.Detection, changed));
+            panel.Children.Add(BuildCapabilitySection(TaskCapabilityKind.Detection, "", "检测一种事件或持续状态。", editor.Detection, changed));
             return Card(panel);
         }
-        panel.Children.Add(Text("全部：每项都满足。任一：至少一项满足。取反：确认不满足时才成立。只组合持续状态，不能把快捷键或定时事件当作状态。", 13, Muted));
-        panel.Children.Add(Text("状态暂未确认时，组合也可能暂未确认；取反不会把“未确认”当成满足。持续动作的结束与恢复按所选动作说明执行。", 12, Muted));
+        panel.Children.Add(Help("全部：每项都满足。任一：至少一项满足。不满足此条件：确认不满足时才成立。只组合持续状态，不能把快捷键或定时事件当作状态。", "多个条件的组合方式"));
+        panel.Children.Add(Help("状态暂未确认时，组合也可能暂未确认；不满足此条件不会把“未确认”当成满足。持续动作的结束与恢复按所选动作说明执行。", "状态未确认时的行为"));
         if (!supported) panel.Children.Add(Text("当前后台版本尚不支持组合检测。配置和输入已保留，请更新后台后刷新。", 12, Amber));
         var treeHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch, IsEnabled = supported };
         var redrawQueued = false;

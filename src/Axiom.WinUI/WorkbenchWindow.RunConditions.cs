@@ -35,7 +35,7 @@ public sealed partial class WorkbenchWindow
             return unsupported;
         }
         var panel = Column(12);
-        panel.Children.Add(Text("条件不满足时，整个任务自动暂停，内部检测停止。条件满足后自动恢复；手动暂停的任务不会自动启用。", 13, Muted));
+        panel.Children.Add(Help("条件不满足时，整个任务自动暂停，内部检测停止。条件满足后自动恢复；手动暂停的任务不会自动启用。"));
         var hdr = new ComboBox { Header = "HDR 自动暂停（主显示器）", HorizontalAlignment = HorizontalAlignment.Stretch,
             ItemsSource = new[] { "不根据 HDR 暂停", "HDR 开启时自动暂停", "HDR 关闭时自动暂停" },
             SelectedIndex = current.Hdr == "off" ? 1 : current.Hdr == "on" ? 2 : 0 };
@@ -56,7 +56,7 @@ public sealed partial class WorkbenchWindow
         var week = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 4 };
         foreach (var day in days) week.Children.Add(day.Box);
         times.Children.Add(week);
-        times.Children.Add(Text("按电脑本地时间；结束早于开始表示跨午夜，后半段属于开始当天。恢复时重新读取状态，暂停期间错过的触发不会补执行。", 12, Muted));
+        times.Children.Add(Help("按电脑本地时间；结束早于开始表示跨午夜，后半段属于开始当天。恢复时重新读取状态，暂停期间错过的触发不会补执行。"));
         times.Visibility = toggle.IsOn ? Visibility.Visible : Visibility.Collapsed; panel.Children.Add(times);
         void SaveDraft()
         {

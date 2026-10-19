@@ -15,6 +15,7 @@ internal sealed partial class PluginTaskRuntime
         internal ResourceKey[] Keys = keys;
         internal long Sequence;
         internal bool Ready;
+        internal bool PreserveOnRebind;
     }
     private StartupInput? startupInput;
     private readonly SemaphoreSlim trayToolGate = new(1, 1);
@@ -35,7 +36,7 @@ internal sealed partial class PluginTaskRuntime
         task.Detection.Parameters.GetValueOrDefault("frequency") == "every" && task.Detection.Parameters.GetValueOrDefault("mode") is TrayTool.Startup or TrayTool.Continuous &&
         task.Action.CapabilityId == TrayCapabilities.Hide && task.Action.SchemaVersion == 1 && task.Action.Parameters.Count == 3 &&
         int.TryParse(task.Action.Parameters.GetValueOrDefault("waitSeconds"), NumberStyles.None, CultureInfo.InvariantCulture, out var waitSeconds) &&
-        waitSeconds is >= 1 and <= 30 && task.Action.Parameters.GetValueOrDefault("delaySeconds") == "0";
+        waitSeconds is >= 1 and <= TrayCapabilities.MaximumWaitSeconds && task.Action.Parameters.GetValueOrDefault("delaySeconds") == "0";
 
     private AutomationTask? TrayTask()
     {

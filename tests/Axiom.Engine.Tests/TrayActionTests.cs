@@ -25,7 +25,7 @@ public sealed class TrayActionTests
         Assert.Equal(RuleActionKind.Command,rule.Action.Kind);Assert.Equal(TrayCapabilities.Hide,rule.Action.Key.CapabilityId);Assert.Equal(TimeSpan.FromSeconds(2),rule.Timing.MinimumDuration);
         Assert.Equal(2,TrayCapabilities.ValidateTargets(task.Action).Length);
         Assert.Equal(TaskFieldKind.TraySelection,TrayCapabilities.Descriptor.Fields.Single(f=>f.Id=="executable").Kind);
-        foreach(var value in new[]{"0","31","NaN"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("waitSeconds",value)}));
+        foreach(var value in new[]{"0","121","NaN"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("waitSeconds",value)}));
         foreach(var value in new[]{"SampleAudio.exe",@"C:\Windows\cmd.exe",@"C:\Axiom.exe"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("executable",value)}));
         Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.Add("inject","true")}));
     }
@@ -101,6 +101,22 @@ public sealed class TrayActionTests
         target.Add(false);
         var missing=await WindowsTrayActions.HideAsync(Path.Combine(Path.GetTempPath(),Guid.NewGuid()+".exe"),TimeSpan.FromSeconds(1),default);
         Assert.False(missing.Success);Assert.True(target.Exists(false));
+    }
+    [Fact(Timeout = 15000)]
+    public async Task ShortStartupWaitMissesLateWindowButLongWaitHidesItWithoutManualRetry()
+    {
+        var shortWait = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
+        Assert.False(shortWait.Success);
+        var pending = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(60), default);
+        await Task.Delay(1500); Assert.False(pending.IsCompleted);
+        using var target = new IconWindow(false, true);
+        target.Add(false);
+        var hidden = await pending.WaitAsync(TimeSpan.FromSeconds(4));
+        Assert.True(hidden.Success, hidden.Reason); Assert.False(target.Exists(false)); Assert.True(target.Alive);
+        using var cancel = new CancellationTokenSource();
+        var cancelled = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(120), cancel.Token);
+        cancel.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        target.Add(false); Assert.True(target.Exists(false));
     }
     [Fact(Timeout=15000)]
     public async Task SharedWaitSourceSurvivesOneSubscriberAndCanBeRecreated()
