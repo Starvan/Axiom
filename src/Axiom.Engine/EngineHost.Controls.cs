@@ -88,7 +88,7 @@ public sealed partial class EngineHost
         }
         foreach (var rule in rules.Values)
         {
-            if (!rule.Definition.Enabled || mode == EngineMode.Lightweight && !rule.Definition.Retention.KeepInLightweight) continue;
+            if (!rule.Definition.Enabled || rule.AutomaticPauseReason is not null || mode == EngineMode.Lightweight && !rule.Definition.Retention.KeepInLightweight) continue;
             if (!Authorize(rule.Definition.Principal, rule.Definition.Action.Key, Operation(rule.Definition.Action)).Allowed ||
                 rule.Definition.Condition.Dependencies.Any(key => !Authorize(rule.Definition.Principal, key, CapabilityOperation.Observe).Allowed)) continue;
             Add(rule.Definition.Condition.Dependencies.Append(rule.Definition.Action.Key), rule.Definition.Timing.MaximumInputAge,
@@ -197,7 +197,7 @@ public sealed partial class EngineHost
     {
         foreach (var rule in rules.Values)
         {
-            var willPause = target == EngineMode.Lightweight && !rule.Definition.Retention.KeepInLightweight;
+            var willPause = rule.AutomaticPauseReason is not null || target == EngineMode.Lightweight && !rule.Definition.Retention.KeepInLightweight;
             var wasPaused = previouslyPaused.Contains(rule.Definition.Id);
             if (wasPaused == willPause) continue;
             if (wasPaused && !willPause)
@@ -272,6 +272,12 @@ public sealed partial class EngineHost
     }
     partial void SnapshotArrived(Mutation mutation)
     {
+        if (mutation.IsSnapshot)
+            foreach (var rule in rules.Values.Where(r => r.FreshSnapshots.Count != 0))
+            {
+                foreach (var sample in mutation.Touched) rule.FreshSnapshots.Remove(sample.Observation.Key);
+                if (rule.FreshSnapshots.Count == 0) { EvaluateRule(rule, baseline: true); Recompute(rule.Definition.Action.Key); }
+            }
         if ((!mutation.IsSnapshot || resumeSnapshots.Count == 0) && transitionObservationFences.Count == 0) return;
         var changed = false;
         var resuming = mutation.IsSnapshot && resumeSnapshots.Count != 0

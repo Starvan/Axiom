@@ -4,6 +4,8 @@ namespace Axiom.Contracts;
 
 public static class SystemEventCapabilities
 {
+    // Host/Agent transport only; deliberately absent from the user capability catalog.
+    public const string ClockEvents = "system.clock-events";
     public const string Event = "system.event";
     public static readonly string[] Kinds = ["locked", "unlocked", "resumed", "ac", "battery", "network-up", "network-down", "battery-low20", "battery-low10", "display-changed", "usb-arrived", "usb-removed"];
     public static TaskCapability Descriptor { get; } = new(Event, 1, TaskCapabilityKind.Detection, "系统", "系统环境变化",

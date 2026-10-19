@@ -184,10 +184,20 @@ Release用独立清理token，末尾全部finally尝试清理，内屏对象及�
 
 ## 有界状态组合检测
 
-`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时必须task schema3，`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。Domain不依赖JSON，叶的默认Children归一为空数组；常规序列化允许null/false默认字段，单检测及协商语义由版本/树校验保持，匿名摘要末级省略false标记仍还原false。
+`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时使用task schema3（有外层运行条件则schema4），`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。Domain不依赖JSON，叶的默认Children归一为空数组；常规序列化允许null/false默认字段，单检测及协商语义由版本/树校验保持，匿名摘要末级省略false标记仍还原false。
 
 Snapshot.CompositeDetectionVersion=1及所选action.SupportsCompositeDetection=true共同协商；只有检测IsStateCondition=true可选为叶，脉冲/快捷键/定时/启动检测保留单检测路径、不组合或否定。PluginTaskRuntime启用compiler支持并登记每个允许对，编译、保存、加载和Router逐叶检查同一个动作/同一个支持树的backend，继承全部反馈排除。HDR旧backend/legacy转换明确拒绝树。Domain已有All/Any/Not三值：NOT Unknown=Unknown，AND中明确false可决定false，OR中明确true可决定true；Engine依赖集合及观察计划去重合并，未知/结束/暂停/源释放撤销持续授权，首次及恢复snapshot不补Command。
 
 SQLite无需新配置表：schema3树JSON保存/读回，首次保存3时在同一事务把user_version提升3，重新打开不降版；旧应用在读取/覆盖前因数据库版本较新拒绝，旧1/2记录由新应用完整读取。任务管道仍版本1/原frame上限，save先检查树结构与schema，未知新树不能落回anchor。AI建议组合使用UsageImport.Version2且携同一DetectionExpression/首叶Detection，版本1不能夹树；逐叶解析观察别名、必填/手填和能力约束，每叶支持同动作且目录协商才给默认暂停schema3草稿。匿名摘要/机器目录保留协商及state/action标记，原64KiB不变。
 
 “非锁定”使用独立`session.lock-state`，state=locked|unlocked，资源current-session为锁定bool；只读WTSInfoEx当前Active会话及锁元数据，未知/非活动不假未锁定，不读取用户名等内容。WindowsSessionEvents(lockStateOnly:true)先订阅后初读；7/8仅提示查询，1/3/5/9及恢复先Unknown再重查建基线，2/4/6及挂起只失效等待报告。64有界合并保留reset，队列失败立即标记并清缓存，新kind不进旧租约；没有轮询、锁屏请求或自动解锁。允许提醒、播放设置/应用音量及保持唤醒，排除锁屏/显示动作反馈。
+
+## 任务级自动暂停
+
+`AutomationTask.RunConditions`使用schema4，包含主屏`Hdr=any|on|off`与可选`WeeklyTimeWindow`，两者均须满足；不改旧`TimeWindow`动作执行门禁。schema4也可保留组合树。Snapshot.RunConditionsVersion=1协商，未支持的编译器、旧schema夹带或旧数据库版本不能静默忽略。SQLite首次保存4原地升user_version4，不批量改旧配置；导入Version3可携运行条件，旧导入1/2拒绝夹带。
+
+Host维持独立外层HDR订阅和时钟/恢复通知，仅设置一个最近时段边界deadline。HDR先订阅再初读，随后依赖AdvancedColorInfoChanged及拓扑/恢复事件；外层和普通`display.hdr-state`检测共享原生来源，不采集画面、不轮询状态。HDR未知保持自动暂停，不假装关闭。时间按本地周时段、起点包含终点排除、跨午夜归起点星期。
+
+Engine自动暂停独立于持久手动Paused/version，移除该规则内部观察需求，取消等待及在途授权，Desired State沿既有保护释放；其他任务共享的需求不释放。恢复重新获取状态基线，旧边沿不重放，一次Command不因恢复快照补发；Desired State按新的当前条件重算。手动暂停不会因HDR/时间满足而自动启用。
+
+同用户`watch-run-states`原子订阅并返回全量TaskRunStatus，初始sequence0，后续有界合并状态变化；断开释放。仅握手有deadline，闲置无心跳/刷新计时器。UI显示手动暂停、自动暂停及原因；流断开显示状态未确认，显式刷新重连，不继续宣称旧状态有效。

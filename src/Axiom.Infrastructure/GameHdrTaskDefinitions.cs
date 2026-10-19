@@ -45,7 +45,7 @@ public sealed class HdrTaskAction : ITaskActionCompiler
         [new("display", "显示器", TaskFieldKind.Resource, true, "选择支持 HDR 的显示器。", null, 1024, []),
          new("enabled", "开启 HDR", TaskFieldKind.Boolean, true, "关闭此开关表示目标为关闭 HDR。", "true", 5, [])],
         "正常结束后恢复开始前的设置；相反目标同时生效时暂停切换。",
-        "执行期间修改、暂停或删除此任务，会保留当前 HDR，本次结束不再自动恢复。");
+        "执行期间修改、暂停或删除此任务，会保留当前 HDR，本次结束不再自动恢复。", SupportsRunConditions: false);
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {
         AutomationTaskCompiler.ValidateInvocation(configuration, Descriptor);
@@ -66,7 +66,7 @@ public static class GameHdrTasks
         new("display.hdr", 1, ImmutableDictionary<string, string>.Empty.Add("display", rule.DisplayPath).Add("enabled", rule.HdrEnabled ? "true" : "false")));
     public static GameHdrRuleDto ToLegacy(AutomationTask task)
     {
-        if (task.DetectionExpression is not null || task.SchemaVersion == 3) throw new ArgumentException("HDR旧适配器不支持组合检测，不能忽略条件树。");
+        if (task.DetectionExpression is not null || task.SchemaVersion >= 3 || task.RunConditions is not null) throw new ArgumentException("HDR旧适配器不支持组合检测或自动暂停条件。");
         TaskDetectionExpressions.ValidateTask(task);
         if (task.TimeWindow is not null) throw new ArgumentException("HDR 不支持命令时间段限制。");
         if (task.Detection.CapabilityId != "process.running" || task.Action.CapabilityId != "display.hdr")

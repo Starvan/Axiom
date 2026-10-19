@@ -50,9 +50,6 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
                         {
                             Check(((delegate* unmanaged[Stdcall]<nint, byte*, int>)Slot(output, 7))(output, desc));
                             if (*(nint*)(desc + 88) != monitor) continue;
-                            var output6 = Query(output, new("068346E8-AAEC-4B84-ADD7-137F513F77A1"));
-                            try { Check(((delegate* unmanaged[Stdcall]<nint, byte*, int>)Slot(output6, 27))(output6, desc)); if (*(int*)(desc + 100) != 0) throw new NotSupportedException("主屏HDR或非SDR颜色模式已开启，画面检测暂停；关闭后自动恢复。"); }
-                            finally { Marshal.Release(output6); }
                             Check(D3D11CreateDevice(adapter, 0, 0, 0x20, 0, 0, 7, out device, out _, out context));
                             var output1 = Query(output, new("00CDDEA8-939B-4B83-A340-A685226666CC"));
                             try { nint created; Check(((delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)Slot(output1, 22))(output1, device, &created)); duplication = created; }

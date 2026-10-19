@@ -15,7 +15,7 @@ public sealed class ScreenContentPlugin : IAutomationPlugin
     public IEnumerable<CapabilityBinding> Bindings => [new(new(ScreenContentCapabilities.Bright, new("axiom.bool", 1), new("axiom.bool", 1),
         ScopeKind.Session, true, false, false, ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
         TimeSpan.FromSeconds(40), true, ConcurrencyScope.Resource, RetryCategory.Never, ConfirmationSource.Observation, EventFidelity.EdgeSensitive,
-        TimeSpan.Zero, TimeSpan.Zero, CostClass.Moderate, true, "active SDR screen content rules within detection hours", "same user", []), ScalarKind.Boolean, ScalarKind.Boolean)];
+        TimeSpan.Zero, TimeSpan.Zero, CostClass.Moderate, true, "active screen content rules within detection hours", "same user", []), ScalarKind.Boolean, ScalarKind.Boolean)];
 }
 public sealed class ScreenContentTaskDetection : ITaskDetectionCompiler
 {

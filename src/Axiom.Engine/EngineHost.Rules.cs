@@ -21,6 +21,8 @@ public sealed partial class EngineHost
         internal decimal? EventCursor;
         internal bool EventLatched;
         internal StateValue? EventStamp;
+        internal string? AutomaticPauseReason;
+        internal readonly HashSet<ResourceKey> FreshSnapshots = [];
     }
     private readonly Dictionary<string, RuntimeRule> rules = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> ruleVersions = new(StringComparer.Ordinal);
@@ -85,7 +87,7 @@ public sealed partial class EngineHost
         }
     }
 
-    public void SetRule(RuleDefinition definition)
+    public void SetRule(RuleDefinition definition, string? initialAutomaticPauseReason = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         lock (gate)
@@ -103,7 +105,7 @@ public sealed partial class EngineHost
                 RemoveTargetRule(previous);
             }
             ruleVersions[definition.Id] = definition.Version;
-            var runtime = new RuntimeRule(definition);
+            var runtime = new RuntimeRule(definition) { AutomaticPauseReason = initialAutomaticPauseReason };
             rules[definition.Id] = runtime;
             index.Set(definition.Id, definition.Enabled && !Paused(runtime) ? definition.Condition.Dependencies : []);
             if (!targetRules.TryGetValue(definition.Action.Key, out var set)) targetRules[definition.Action.Key] = set = new(StringComparer.Ordinal);
@@ -112,6 +114,26 @@ public sealed partial class EngineHost
             EvaluateRule(runtime, baseline: true);
             if (previousTarget is not null && previousTarget != definition.Action.Key) Recompute(previousTarget);
             Recompute(definition.Action.Key);
+            DemandChanged();
+        }
+    }
+    public void SetRuleAutomaticPause(string ruleId, string? reason)
+    {
+        lock (gate)
+        {
+            RequireAutomation();
+            var rule = rules[ruleId];
+            if (rule.AutomaticPauseReason == reason) return;
+            rule.AutomaticPauseReason = reason;
+            rule.FreshSnapshots.Clear();
+            if (reason is null && rule.Definition.Enabled)
+                rule.FreshSnapshots.UnionWith(rule.Definition.Condition.Dependencies.Where(key => !heldResources.Contains(key)));
+            rule.History = ImmutableDictionary<RuleCondition, TruthValue>.Empty;
+            rule.EventCursor = null; rule.EventLatched = false; rule.EventStamp = null;
+            index.Set(ruleId, rule.Definition.Enabled && !Paused(rule) ? rule.Definition.Condition.Dependencies : []);
+            configurationRevision++;
+            EvaluateRule(rule, baseline: true);
+            Recompute(rule.Definition.Action.Key);
             DemandChanged();
         }
     }
@@ -195,11 +217,13 @@ public sealed partial class EngineHost
             return decisions.GetValueOrDefault(key) ?? new(key, 0, store.Revision, DecisionStatus.Released, null, [], "NotManaged");
         }
     }
-    private bool Paused(RuntimeRule rule) => (requestedMode == EngineMode.Lightweight || effectiveMode == EngineMode.Lightweight) && !rule.Definition.Retention.KeepInLightweight;
+    private bool Paused(RuntimeRule rule) => rule.AutomaticPauseReason is not null || (requestedMode == EngineMode.Lightweight || effectiveMode == EngineMode.Lightweight) && !rule.Definition.Retention.KeepInLightweight;
     private string? Eligibility(RuntimeRule rule)
     {
         var definition = rule.Definition;
         if (!definition.Enabled) return "Disabled";
+        if (rule.AutomaticPauseReason is not null) return "AutomaticallyPaused: " + rule.AutomaticPauseReason;
+        if (rule.FreshSnapshots.Count != 0) return "AwaitingAutomaticResumeSnapshot";
         if (Paused(rule)) return "PausedInLightweight";
         if (rule.Definition.Condition.Dependencies.Any(resumeSnapshots.Contains) || resumeSnapshots.Contains(rule.Definition.Action.Key)) return "AwaitingResumeSnapshot";
         if (!capabilities.TryGetValue(definition.Action.Key.CapabilityId, out var target) || !target.Descriptor.Available) return "CapabilityUnavailable";

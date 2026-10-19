@@ -55,7 +55,7 @@ public sealed partial class WorkbenchWindow : Window
         shell = BuildShell();
         Content = shell;
         InitializeTheme();
-        Closed += (_, _) => { closed = true; pendingUsageLease?.Dispose(); usageLease?.Dispose(); };
+        Closed += (_, _) => { closed = true; pendingUsageLease?.Dispose(); usageLease?.Dispose(); StopRunStatesWatch(); };
         AppWindow.Closing += async (_, args) =>
         {
             if (closingConfirmed) return;
@@ -179,6 +179,7 @@ public sealed partial class WorkbenchWindow : Window
     private void RenderCore()
     {
         if (closed) return;
+        SyncRunStatesWatch();
         foreach (var (key, button) in navigation) button.Background = key == page ? Soft : Surface;
         (pageTitle.Text, pageSubtitle.Text) = page switch
         {
@@ -245,6 +246,7 @@ public sealed partial class WorkbenchWindow : Window
             var response = await WorkbenchClient.RequestAsync(new(1, "read", Guid.NewGuid().ToString("N")));
             if (response.Type != "snapshot" || response.Snapshot is null) throw new InvalidDataException(response.Error);
             status = response.Snapshot; reachable = true; readAt = DateTimeOffset.Now;
+            if (runStatesFailed) { StopRunStatesWatch(); runStatesFailed = false; }
             await ReadGroupsAsync();
             if (page == Page.Toolbox) { await ReadSteamToolAsync(false); await ReadTrayToolAsync(); await ReadBrightnessWheelAsync(); }
             if (page == Page.Usage) await ReadUsageAsync();

@@ -41,7 +41,7 @@ public sealed partial class WorkbenchWindow
         toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var counts = Column(6);
-        counts.Children.Add(Text(status is null ? "你的任务会显示在这里" : $"{status.Tasks.Length} 个任务  ·  {status.Tasks.Count(x => !x.Paused)} 个已启用", 14, Muted));
+        counts.Children.Add(Text(status is null ? "你的任务会显示在这里" : $"{status.Tasks.Length} 个任务  ·  {status.Tasks.Count(x => TaskStateLabel(x) == "已启用")} 个已启用  ·  {status.Tasks.Count(x => TaskStateLabel(x) == "自动暂停")} 个自动暂停", 14, Muted));
         counts.Children.Add(Text(readAt is null ? "尚未读取后台" : $"状态读取于 {readAt:HH:mm:ss}", 11, Muted));
         toolbar.Children.Add(counts);
         var buttons = Row(8); buttons.Children.Add(RefreshButton());
@@ -66,7 +66,7 @@ public sealed partial class WorkbenchWindow
             filter.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             filter.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var search = new TextBox { Header = "查找任务", PlaceholderText = "任务名称、检测或动作名称", Text = ruleSearch, MaxLength = 200 };
-            var state = new ComboBox { Header = "显示", ItemsSource = new[] { "全部任务", "仅已启用", "仅已暂停" }, SelectedIndex = ruleStateFilter, MinWidth = 150 };
+            var state = new ComboBox { Header = "显示", ItemsSource = new[] { "全部任务", "仅已启用", "仅自动暂停", "仅手动暂停" }, SelectedIndex = ruleStateFilter, MinWidth = 150 };
             filter.Children.Add(search); Grid.SetColumn(state, 1); filter.Children.Add(state); content.Children.Add(filter);
             var shown = Text("", 12, Muted); var cards = Column(24); content.Children.Add(shown); content.Children.Add(cards);
             search.TextChanged += (_, _) => { ruleSearch = search.Text; ShowRules(); };
@@ -75,7 +75,7 @@ public sealed partial class WorkbenchWindow
             void ShowRules()
             {
                 var query = ruleSearch.Trim();
-                var visible = (status?.Tasks ?? []).Where(task => (ruleStateFilter == 0 || task.Paused == (ruleStateFilter == 2)) &&
+                var visible = (status?.Tasks ?? []).Where(task => (ruleStateFilter == 0 || TaskStateLabel(task) == (ruleStateFilter == 1 ? "已启用" : ruleStateFilter == 2 ? "自动暂停" : "手动暂停")) &&
                     (query.Length == 0 || task.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                      TaskDetections(task).Any(d => FindCapability(d, TaskCapabilityKind.Detection)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
                      (FindCapability(task.Action, TaskCapabilityKind.Action)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))).ToArray();
@@ -85,7 +85,16 @@ public sealed partial class WorkbenchWindow
                 foreach (var task in visible)
                 {
                     var body = Column(14);
-                    var heading = Row(12); heading.Children.Add(Text(task.Title, 20, Ink, true)); heading.Children.Add(Badge(task.Paused ? "已暂停" : "已启用", task.Paused)); body.Children.Add(heading);
+                    var heading = Row(12); heading.Children.Add(Text(task.Title, 20, Ink, true)); heading.Children.Add(Badge(TaskStateLabel(task), TaskStateLabel(task) != "已启用")); body.Children.Add(heading);
+                    if (!task.Paused && RunState(task) is { AutomaticallyPaused: true } runState)
+                        body.Children.Add(Text(runState.Reason ?? "运行条件尚未满足。", 13, Amber));
+                    if (task.RunConditions is { } gates)
+                    {
+                        var labels = new List<string>();
+                        if (gates.Hdr != "any") labels.Add(gates.Hdr == "off" ? "主屏 HDR 关闭时运行" : "主屏 HDR 开启时运行");
+                        if (gates.TimeWindow is { } allowed) labels.Add(TimeWindowLabel(allowed).Replace("接受新触发", "允许运行"));
+                        body.Children.Add(Text(string.Join(" · ", labels), 12, Muted));
+                    }
                     body.Children.Add(Text("检测  " + DetectionSummary(task), 14, Muted));
                     body.Children.Add(Text("执行  " + Summary(task.Action, TaskCapabilityKind.Action), 15, Ink, true));
                     if (task.TimeWindow is { } window)
@@ -96,7 +105,7 @@ public sealed partial class WorkbenchWindow
                     }
                     var actions = Row(8);
                     var edit = Action("编辑"); edit.Click += (_, _) => SelectRule(task);
-                    var toggle = Action(task.Paused ? "启用" : "暂停"); toggle.Click += async (_, _) => await ToggleRuleAsync(task);
+                    var toggle = Action(task.Paused ? "启用" : "手动暂停"); toggle.Click += async (_, _) => await ToggleRuleAsync(task);
                     actions.Children.Add(edit); actions.Children.Add(toggle); body.Children.Add(actions); cards.Children.Add(Card(body));
                 }
             }
@@ -118,7 +127,12 @@ public sealed partial class WorkbenchWindow
         var behavior = Column(12); behavior.Children.Add(Text("03   运行方式", 18, Ink, true));
         var actionDescriptor = FindCapability(editor.Action, TaskCapabilityKind.Action);
         var timeWindowHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        void UpdateTimeWindow() => timeWindowHost.Content = BuildTimeWindowEditor(FindCapability(editor.Action, TaskCapabilityKind.Action)?.SupportsTimeWindow == true);
+        var runConditionsHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        void UpdateTimeWindow()
+        {
+            timeWindowHost.Content = BuildTimeWindowEditor(FindCapability(editor.Action, TaskCapabilityKind.Action)?.SupportsTimeWindow == true);
+            runConditionsHost.Content = BuildRunConditionsEditor();
+        }
         var behaviorText = Text(actionDescriptor?.Behavior ?? "选择动作后，这里会说明执行和结束方式。", 13, Muted);
         var warningText = Text(editor.Version > 0 ? actionDescriptor?.EditWarning ?? "" : "", 12, Amber);
         void SelectionChanged(TaskCapabilityKind kind)
@@ -136,8 +150,9 @@ public sealed partial class WorkbenchWindow
         detectionHost.Content = BuildDetectionSection(SelectionChanged); content.Children.Add(detectionHost);
         BuildActions(); content.Children.Add(actionHost);
         behavior.Children.Add(behaviorText);
+        behavior.Children.Add(runConditionsHost);
         UpdateTimeWindow(); behavior.Children.Add(timeWindowHost);
-        var enabled = new ToggleSwitch { Header = "启用任务", OnContent = "保存后开始检测", OffContent = "只保存，暂不检测", IsOn = !editor.Paused };
+        var enabled = new ToggleSwitch { Header = "启用任务", OnContent = "保存后按运行条件检测", OffContent = "只保存，暂不检测", IsOn = !editor.Paused };
         enabled.Toggled += (_, _) => editor.Paused = !enabled.IsOn; behavior.Children.Add(enabled);
         behavior.Children.Add(warningText);
         content.Children.Add(Card(behavior));

@@ -24,4 +24,24 @@ public sealed record WeeklyTimeWindow(int StartMinute, int EndMinute, int Days)
         else if (minute < StartMinute) return false;
         return (Days & (1 << day)) != 0;
     }
+
+    public DateTimeOffset? NextBoundary(DateTimeOffset now, TimeZoneInfo zone)
+    {
+        Validate();
+        var date = TimeZoneInfo.ConvertTime(now, zone).Date;
+        DateTimeOffset? next = null;
+        for (var day = 0; day <= 8; day++)
+            foreach (var minute in new[] { StartMinute, EndMinute })
+            {
+                var local = DateTime.SpecifyKind(date.AddDays(day).AddMinutes(minute), DateTimeKind.Unspecified);
+                while (zone.IsInvalidTime(local)) local = local.AddMinutes(1);
+                var offsets = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local) : [zone.GetUtcOffset(local)];
+                foreach (var offset in offsets)
+                {
+                    var candidate = new DateTimeOffset(local, offset).ToUniversalTime();
+                    if (candidate > now && (next is null || candidate < next) && Contains(candidate.AddTicks(-1), zone) != Contains(candidate, zone)) next = candidate;
+                }
+            }
+        return next;
+    }
 }

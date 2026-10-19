@@ -46,12 +46,18 @@ public static class TaskDetectionExpressions
     public static ImmutableArray<TaskInvocation> ValidateTask(AutomationTask task)
     {
         if (task.Detection is null) throw new ArgumentException("缺少检测配置。");
+        if (task.RunConditions is not null)
+        {
+            if (task.SchemaVersion != 4) throw new ArgumentException("自动暂停条件必须使用任务版本4。");
+            task.RunConditions.Validate();
+        }
+        else if (task.SchemaVersion == 4) throw new ArgumentException("版本4任务必须声明自动暂停条件。");
         if (task.DetectionExpression is null)
         {
-            if (task.SchemaVersion != (task.TimeWindow is null ? 1 : 2)) throw new ArgumentException("单检测任务版本无效。");
+            if (task.SchemaVersion != 4 && task.SchemaVersion != (task.TimeWindow is null ? 1 : 2)) throw new ArgumentException("单检测任务版本无效。");
             return [task.Detection];
         }
-        if (task.SchemaVersion != 3) throw new ArgumentException("组合检测必须使用任务版本3，旧版本不得忽略条件树。");
+        if (task.SchemaVersion is not (3 or 4)) throw new ArgumentException("组合检测必须使用任务版本3或4，旧版本不得忽略条件树。");
         var leaves = Validate(task.DetectionExpression);
         if (!SameInvocation(task.Detection, leaves[0])) throw new ArgumentException("组合检测首条件与兼容展示配置不一致。");
         return leaves;

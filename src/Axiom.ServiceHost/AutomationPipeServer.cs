@@ -39,7 +39,9 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
             Combinations = [.. snapshots.SelectMany(x => x.Combinations)],
             Observations = [.. snapshots.SelectMany(x => x.Observations)],
             DetectionAvailable = snapshots.All(x => x.DetectionAvailable),
-            CompositeDetectionVersion = snapshots.Max(x => x.CompositeDetectionVersion)
+            CompositeDetectionVersion = snapshots.Max(x => x.CompositeDetectionVersion),
+            RunConditionsVersion = snapshots.Max(x => x.RunConditionsVersion),
+            RunStates = [.. snapshots.Where(x => !x.RunStates.IsDefault).SelectMany(x => x.RunStates)]
         };
     }
     private async Task HandleAsync(NamedPipeServerStream pipe)
@@ -59,6 +61,27 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                 GameHdrPipePeer.RequireSameSession(pipe, request.Type == "restore-shortcuts" ? "Axiom.SessionAgent.exe" : null);
                 AutomationProtocol.ValidateRequest(request, DateTimeOffset.UtcNow);
                 authorized = true;
+                if (request.Type == "watch-run-states")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    deadline.CancelAfter(Timeout.InfiniteTimeSpan);
+                    var disconnected = pipe.ReadExactlyAsync(new byte[1], deadline.Token).AsTask();
+                    await using var states = runtime.WatchRunStatesAsync(deadline.Token).GetAsyncEnumerator(deadline.Token);
+                    long sequence = 0;
+                    try
+                    {
+                        while (true)
+                        {
+                            var changed = states.MoveNextAsync().AsTask();
+                            if (await Task.WhenAny(disconnected, changed) == disconnected) { deadline.Cancel(); try { await changed; } catch (OperationCanceledException) { } break; }
+                            if (!await changed) break;
+                            using var write = CancellationTokenSource.CreateLinkedTokenSource(exit.Token); write.CancelAfter(TimeSpan.FromSeconds(3));
+                            await AutomationProtocol.WriteAsync(pipe, new(1, "run-states", request.RequestId, RunStates: states.Current, RunStatesSequence: sequence++), write.Token);
+                        }
+                    }
+                    finally { deadline.Cancel(); try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { } }
+                    return;
+                }
                 if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
                 {
                     var runtime = backends.OfType<PluginTaskRuntime>().Single();

@@ -7,6 +7,7 @@ namespace Axiom.Infrastructure;
 // Capability parameters are versioned JSON, independent of plugin-specific columns.
 public sealed partial class SqliteAutomationTaskStore : IDisposable
 {
+    private static readonly JsonSerializerOptions TaskJson = new() { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow };
     private readonly SqliteConnection connection;
     private readonly SemaphoreSlim gate = new(1, 1);
     public SqliteAutomationTaskStore(string path)
@@ -17,7 +18,7 @@ public sealed partial class SqliteAutomationTaskStore : IDisposable
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "PRAGMA user_version;";
         var storedVersion = Convert.ToInt32(cmd.ExecuteScalar());
-        if (storedVersion > 3) throw new InvalidDataException("任务数据库版本较新，请更新 Axiom。");
+        if (storedVersion > 4) { connection.Dispose(); throw new InvalidDataException("任务数据库版本较新，请更新 Axiom。"); }
         cmd.CommandText = "PRAGMA busy_timeout=2000; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS automation_tasks(id TEXT PRIMARY KEY, version INTEGER NOT NULL, configuration TEXT NOT NULL); CREATE TABLE IF NOT EXISTS host_startup(id INTEGER PRIMARY KEY CHECK(id=1), boot_id INTEGER NOT NULL); PRAGMA user_version=" + Math.Max(2, storedVersion) + ";";
         cmd.ExecuteNonQuery();
         CreateWindowOnceAttempts();
@@ -31,7 +32,7 @@ public sealed partial class SqliteAutomationTaskStore : IDisposable
             using var reader = cmd.ExecuteReader(); var list = new List<AutomationTask>();
             while (reader.Read())
             {
-                var task = JsonSerializer.Deserialize<AutomationTask>(reader.GetString(0)) ?? throw new InvalidDataException("任务配置无效。");
+                var task = JsonSerializer.Deserialize<AutomationTask>(reader.GetString(0), TaskJson) ?? throw new InvalidDataException("任务配置无效。");
                 TaskDetectionExpressions.ValidateTask(task); list.Add(task);
             }
             return [.. list];
@@ -69,7 +70,7 @@ public sealed partial class SqliteAutomationTaskStore : IDisposable
             var saved = task with { Version = checked(current + 1) };
             cmd.CommandText = "INSERT INTO automation_tasks VALUES($id,$version,$config) ON CONFLICT(id) DO UPDATE SET version=$version,configuration=$config;";
             cmd.Parameters.AddWithValue("$version", saved.Version); cmd.Parameters.AddWithValue("$config", JsonSerializer.Serialize(saved)); cmd.ExecuteNonQuery();
-            if (task.SchemaVersion == 3) { cmd.CommandText = "PRAGMA user_version=3;"; cmd.ExecuteNonQuery(); }
+            if (task.SchemaVersion >= 3) { cmd.CommandText = "PRAGMA user_version;"; var version = Convert.ToInt32(cmd.ExecuteScalar()); cmd.CommandText = "PRAGMA user_version=" + Math.Max(version, task.SchemaVersion) + ";"; cmd.ExecuteNonQuery(); }
             token.ThrowIfCancellationRequested(); tx.Commit(); return saved;
         }
         finally { gate.Release(); }

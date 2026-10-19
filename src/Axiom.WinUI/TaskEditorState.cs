@@ -10,6 +10,7 @@ internal sealed class TaskEditorState
     public string Title { get; set; } = "";
     public bool Paused { get; set; }
     public WeeklyTimeWindow? TimeWindow { get; set; }
+    public TaskRunConditions? RunConditions { get; set; }
     public TaskInvocation? Detection { get; private set; }
     public TaskInvocation? Action { get; private set; }
     public TaskDetectionExpression? DetectionExpression { get; private set; }
@@ -26,8 +27,8 @@ internal sealed class TaskEditorState
             catch (ArgumentException) { return false; }
         }
     }
-    public bool Dirty => original is null ? Title.Length > 0 || Detection is not null || DetectionExpression is not null || Action is not null || Paused || TimeWindow is not null :
-        Title != original.Title || Paused != original.Paused || TimeWindow != original.TimeWindow || !Same(Detection, original.Detection) ||
+    public bool Dirty => original is null ? Title.Length > 0 || Detection is not null || DetectionExpression is not null || Action is not null || Paused || TimeWindow is not null || RunConditions is not null :
+        Title != original.Title || Paused != original.Paused || TimeWindow != original.TimeWindow || RunConditions != original.RunConditions || !Same(Detection, original.Detection) ||
         !Same(Action, original.Action) || !SameTree(DetectionExpression, original.DetectionExpression);
     private static bool Same(TaskInvocation? a, TaskInvocation? b) => a is null ? b is null : b is not null && TaskDetectionExpressions.SameInvocation(a, b);
     private static bool SameTree(TaskDetectionExpression? a, TaskDetectionExpression? b) => a is null ? b is null : b is not null &&
@@ -41,6 +42,7 @@ internal sealed class TaskEditorState
     {
         original = task; Id = task?.Id ?? Guid.NewGuid().ToString("D"); Version = task?.Version ?? 0;
         TimeWindow = task?.TimeWindow;
+        RunConditions = task?.RunConditions;
         Title = task?.Title ?? ""; Paused = task?.Paused ?? false; Detection = task?.Detection; Action = task?.Action;
         DetectionExpression = task?.DetectionExpression; TreeVersion++;
     }
@@ -49,7 +51,8 @@ internal sealed class TaskEditorState
         if (task.Version != 0) throw new ArgumentException("候选必须是未保存的任务。");
         Load(task); original = null;
     }
-    public bool CanSave(AutomationSnapshot? snapshot) => Complete && (!Composite || snapshot is { CompositeDetectionVersion: >= 1 } &&
+    public bool CanSave(AutomationSnapshot? snapshot) => Complete && (RunConditions is null || snapshot is { RunConditionsVersion: >= 1 } &&
+        snapshot.Capabilities.Any(c => c.Id == Action!.CapabilityId && c.Kind == TaskCapabilityKind.Action && c.SupportsRunConditions)) && (!Composite || snapshot is { CompositeDetectionVersion: >= 1 } &&
         Detections().All(d => snapshot.Capabilities.Any(c => c.Id == d.CapabilityId && c.Kind == TaskCapabilityKind.Detection &&
             c.SchemaVersion == d.SchemaVersion && c.IsStateCondition)) &&
         snapshot.Capabilities.FirstOrDefault(c => c.Id == Action!.CapabilityId && c.Kind == TaskCapabilityKind.Action) is { } action && SupportsAction(action, snapshot.Combinations));
@@ -213,7 +216,8 @@ internal sealed class TaskEditorState
     {
         if (!Complete) throw new InvalidOperationException("请选择检测和动作，全部/任一组至少需两项，取反组恰好需一项。");
         var anchor = DetectionExpression is null ? Detection! : TaskDetectionExpressions.Validate(DetectionExpression)[0];
-        return new(Id, Version, Title.Trim(), Paused, anchor, Action!, SchemaVersion: Composite ? 3 : TimeWindow is null ? 1 : 2,
-            TimeWindow: TimeWindow, DetectionExpression: DetectionExpression);
+        RunConditions?.Validate();
+        return new(Id, Version, Title.Trim(), Paused, anchor, Action!, SchemaVersion: RunConditions is not null ? 4 : Composite ? 3 : TimeWindow is null ? 1 : 2,
+            TimeWindow: TimeWindow, DetectionExpression: DetectionExpression, RunConditions: RunConditions);
     }
 }

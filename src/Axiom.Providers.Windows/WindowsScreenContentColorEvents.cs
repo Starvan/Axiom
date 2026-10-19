@@ -13,12 +13,13 @@ internal sealed unsafe class PrimaryColorEvents : IDisposable
     private readonly DispatcherQueueController controller = DispatcherQueueController.CreateOnDedicatedThread();
     private readonly Action changed;
     private readonly Action<Exception> failed;
+    private readonly Action<bool>? hdr;
     private readonly ScreenContentColorModeFilter modes = new();
     private DisplayInformation? info;
     private int disposed;
-    internal PrimaryColorEvents(Action changed, Action<Exception> failed)
+    internal PrimaryColorEvents(Action changed, Action<Exception> failed, Action<bool>? hdr = null)
     {
-        this.changed = changed; this.failed = failed;
+        this.changed = changed; this.failed = failed; this.hdr = hdr;
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
@@ -45,7 +46,8 @@ internal sealed unsafe class PrimaryColorEvents : IDisposable
         if (Volatile.Read(ref disposed) != 0 || info is null) return;
         try
         {
-            if (modes.Update((int)info.GetAdvancedColorInfo().CurrentAdvancedColorKind)) changed();
+            var kind = info.GetAdvancedColorInfo().CurrentAdvancedColorKind;
+            if (modes.Update((int)kind)) { hdr?.Invoke(kind == AdvancedColorKind.HighDynamicRange); changed(); }
         }
         catch (Exception error) { failed(error); }
     }
@@ -66,7 +68,8 @@ internal sealed unsafe class PrimaryColorEvents : IDisposable
             info.AdvancedColorInfoChanged += Changed;
             // Read after subscribing so a mode transition cannot fall between
             // the initial read and registration. Reading failures abort setup.
-            modes.Baseline((int)info.GetAdvancedColorInfo().CurrentAdvancedColorKind);
+            var kind = info.GetAdvancedColorInfo().CurrentAdvancedColorKind;
+            modes.Baseline((int)kind); hdr?.Invoke(kind == AdvancedColorKind.HighDynamicRange);
         }
         finally { if (created != 0) Marshal.Release(created); if (factory != 0) Marshal.Release(factory); WindowsDeleteString(name); }
     }

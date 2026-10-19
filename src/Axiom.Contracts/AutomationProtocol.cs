@@ -18,7 +18,9 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSettings? TraySettings = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSnapshot? TrayTool = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSettings? WheelSettings = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSnapshot? Wheel = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSnapshot? Wheel = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TaskRunStatus[]? RunStates = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? RunStatesSequence = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -29,6 +31,12 @@ public static class AutomationProtocol
     private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
+        if (request.RunStates is not null || request.RunStatesSequence is not null) throw new InvalidDataException("运行状态只用于后台回执。");
+        if (request.Type == "watch-run-states")
+        {
+            if (shortcutAgent) throw new InvalidDataException("运行状态只允许用户界面订阅。");
+            ValidateRequest(request with { Type = "read-tray-tool" }, now); return;
+        }
         if (request.Wheel is not null || request.WheelSettings is not null && request.Type != "save-brightness-wheel") throw new InvalidDataException("亮度工具字段不属于此操作。");
         if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
         {

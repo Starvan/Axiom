@@ -45,7 +45,7 @@ public interface IAutomationRuntimeLifetime
     Task EnsureSafeToStopAsync(CancellationToken token);
 }
 
-public sealed class AutomationTaskCompiler(bool supportsCompositeDetection = false)
+public sealed class AutomationTaskCompiler(bool supportsCompositeDetection = false, bool supportsRunConditions = false)
 {
     private readonly Dictionary<string, ITaskDetectionCompiler> detections = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ITaskActionCompiler> actions = new(StringComparer.Ordinal);
@@ -89,10 +89,12 @@ public sealed class AutomationTaskCompiler(bool supportsCompositeDetection = fal
     public void Validate(AutomationTask task)
     {
         var leaves = TaskDetectionExpressions.ValidateTask(task);
+        if (task.RunConditions is not null && !supportsRunConditions) throw new ArgumentException("此后台不支持自动暂停条件，不能忽略外层限制。");
         if (!Guid.TryParseExact(task.Id, "D", out _) || task.Version < 0 ||
             string.IsNullOrWhiteSpace(task.Title) || task.Title.Length > 120 || task.Detection is null || task.Action is null)
             throw new ArgumentException("任务格式或版本无效。");
         if (!actions.TryGetValue(task.Action.CapabilityId, out var action)) throw new ArgumentException("任务使用了未注册的动作。");
+        if (task.RunConditions is not null && !action.Descriptor.SupportsRunConditions) throw new ArgumentException("此动作不支持自动暂停条件。");
         if (task.DetectionExpression is not null && !supportsCompositeDetection) throw new ArgumentException("此后台不支持组合检测，不能只执行首条件。");
         foreach (var leaf in leaves)
         {

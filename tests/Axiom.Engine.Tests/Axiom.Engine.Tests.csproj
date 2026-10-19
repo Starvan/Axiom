@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/ClockEventCapabilityProvider.cs" Link="ClockEventCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.RunConditions.cs" Link="PluginTaskRuntime.RunConditions.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.BrightnessWheel.cs" Link="PluginTaskRuntime.BrightnessWheel.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsBrightnessWheelGesture.cs" Link="WindowsBrightnessWheelGesture.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ScreenContentObservation.cs" Link="ScreenContentObservation.cs" />

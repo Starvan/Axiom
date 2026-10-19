@@ -54,7 +54,7 @@ public static class ScreenContentCapabilities
          new("start", "检测开始（HH:mm，可选）", TaskFieldKind.Text, false, "与结束同时留空表示全天；例如20:00。时段外完全停止画面采集。", "", 5, [], Group: "检测时段"),
          new("end", "检测结束（HH:mm，可选）", TaskFieldKind.Text, false, "例如08:00，结束早于开始表示跨午夜；结束时立即释放亮度控制。", "", 5, [], Group: "检测时段")],
         "只在有启用规则且处于本检测时段时共享采集主屏。桌面更新时最多每250毫秒处理一次，GPU稀疏采样后仅回读4字节统计；画面不保存、不编码、不发送。明亮/变暗经滞回和所选稳定时间后驱动现有条件亮度恢复动作，稳定时间为0时立即响应。",
-        "仅支持SDR主屏，自动感知HDR并暂停；锁屏、睡眠、屏幕关闭、受保护内容或捕获失败为未知并释放亮度控制，恢复事件后重建。统计是画面相对感知亮度与面积，不是显示器背光或nits；稀疏采样有误差，系统未报告的受保护遮蔽无法识别。", IsStateCondition: true);
+        "HDR 不会在此检测内自动暂停；可在任务的自动暂停设置中选择 HDR 开启时暂停。锁屏、睡眠、屏幕关闭、受保护内容或捕获失败为未知并释放亮度控制，恢复事件后重建。统计基于系统转换后的桌面画面，HDR 下可能失真；是相对亮度与面积，不是背光或 nits。稀疏采样有误差，系统未报告的受保护遮蔽无法识别。", IsStateCondition: true);
     public static ScreenContentSpec Validate(TaskInvocation invocation)
     {
         if (invocation.CapabilityId != Bright || invocation.SchemaVersion != 1 || invocation.Parameters is null ||
