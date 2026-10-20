@@ -113,6 +113,19 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             if (!await BeginWindowAttemptsAsync(command, attempts, timeout.Token))
                 return new(OutcomeStatus.Rejected, "此时段已完成、结果未确认或尚不满足重试条件；没有再次执行动作。", command.CommandId);
             ValidateWindowAttemptsBeforeSend(attempts, timeout.Token);
+            if (invocation.CapabilityId == HostsCapabilities.Update)
+            {
+                if (command.Key.ResourceId != "system-hosts") throw new UnauthorizedAccessException("Hosts资源不匹配。");
+                var hostsResult = await ExecuteHostsAsync(invocation, command.CommandId, timeout.Token, () =>
+                {
+                    ValidateWindowAttemptsBeforeSend(attempts, timeout.Token);
+                    sendStarted = true;
+                });
+                await CompleteWindowAttemptsAsync(attempts, hostsResult.Status);
+                Record(hostsResult.Status == OutcomeStatus.Succeeded ? "定时Hosts已完成" : "定时Hosts未完成", hostsResult.Reason,
+                    hostsResult.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Warning);
+                return hostsResult;
+            }
             using var pipe = Client(); await pipe.ConnectForUserAsync(2000, timeout.Token);
             ValidateWindowAttemptsBeforeSend(attempts, timeout.Token);
             // The durable attempt exists before the first possible side effect. Any failure
@@ -207,7 +220,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             lock (statusGate) return new([.. tasks.Where(t => !IsTrayToolTask(t) && !IsWheelToolTask(t))], [.. compiler.Catalog.Where(c => c.Id != TrayTool.Trigger)], [.. Combinations.Where(c => c.DetectionId != TrayTool.Trigger)], watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
-                    p.Key.CapabilityId == HdrStateCapabilities.State ? "主屏HDR状态" : p.Key.CapabilityId == ScreenContentCapabilities.Bright ? "主屏画面明亮面积" : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowOnceCapabilities.Due ? WindowOnceCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
+                    p.Key.CapabilityId == HdrStateCapabilities.State ? "主屏HDR状态" : p.Key.CapabilityId == ScreenContentCapabilities.Bright ? "主屏画面明亮面积" : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowOnceCapabilities.Due ? WindowOnceCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == MonthlyTimeCapabilities.Due ? MonthlyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
                     p.Key.CapabilityId == ScreenContentCapabilities.Bright ? observationReasons.GetValueOrDefault(p.Key, "正在等待主屏画面检测。") : p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == WindowOnceCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待选定时段，成功后本时段不再重复。") : p.Key.CapabilityId == OnceTimeCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待指定日期和时刻") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
                         ? "等待快捷键" : p.Value.Observation.Value?.Number is not null ? "等待下一次事件" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
                         ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"

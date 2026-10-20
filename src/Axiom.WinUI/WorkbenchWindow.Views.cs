@@ -181,7 +181,7 @@ public sealed partial class WorkbenchWindow
             UpdateTimeWindow();
         }
         void BuildActions() => actionHost.Content = BuildCapabilitySection(TaskCapabilityKind.Action,
-            "02   执行什么", "选择条件满足后要执行的动作。", editor.Action, SelectionChanged);
+            HostsEditor ? "Hosts 与 DNS 设置" : "02   执行什么", "选择条件满足后要执行的动作。", editor.Action, SelectionChanged, HostsEditor);
         detectionHost.Content = BuildDetectionSection(SelectionChanged); content.Children.Add(detectionHost);
         BuildActions(); content.Children.Add(actionHost);
         behavior.Children.Add(Details("执行与结束方式", behaviorText));
@@ -205,7 +205,7 @@ public sealed partial class WorkbenchWindow
             }; content.Children.Add(reload);
         }
     }
-    private Border BuildCapabilitySection(TaskCapabilityKind kind, string title, string hint, TaskInvocation? invocation, Action<TaskCapabilityKind> changed)
+    private Border BuildCapabilitySection(TaskCapabilityKind kind, string title, string hint, TaskInvocation? invocation, Action<TaskCapabilityKind> changed, bool fixedCapability = false)
     {
         var body = Column(12); if (!string.IsNullOrWhiteSpace(title)) body.Children.Add(Text(title, 18, Ink, true));
         var choices = status is null ? [] : CapabilityPickerState.Candidates(status, editor, kind);
@@ -256,7 +256,7 @@ public sealed partial class WorkbenchWindow
             catch (ArgumentException failure) { ShowNotice(failure.Message); }
         }
         picker.Content = Selection();
-        body.Children.Add(picker);
+        if (!fixedCapability) body.Children.Add(picker);
         body.Children.Add(parameters); ShowParameters(invocation);
         return string.IsNullOrWhiteSpace(title) ? new Border { Child = body } : Card(body);
     }

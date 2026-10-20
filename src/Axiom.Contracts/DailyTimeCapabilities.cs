@@ -29,7 +29,7 @@ public static class DailyTimeCapabilities
 {
     public const string Due = "time.daily";
     private static readonly string[] DayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-    public static TaskCapability Descriptor { get; } = new(Due, 1, TaskCapabilityKind.Detection, "时间", "在选定日期定时执行",
+    public static TaskCapability Descriptor { get; } = new(Due, 1, TaskCapabilityKind.Detection, "时间", "每天 / 每周定时",
         "按Windows当前本地时区，在选中的星期和时刻执行一次。",
         [new("hour", "小时（24小时制）", TaskFieldKind.Number, true, "0–23的整数。", "9", 2, [], Minimum: 0, Maximum: 23),
          new("minute", "分钟", TaskFieldKind.Number, true, "0–59的整数。", "0", 2, [], Minimum: 0, Maximum: 59),

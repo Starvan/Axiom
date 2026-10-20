@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 using Axiom.Domain;
 
 namespace Axiom.Contracts;
@@ -28,7 +30,9 @@ public static class AutomationProtocol
 {
     public const int MaximumFrame = 262144;
     public static string PipeName(string sid) => "axiom-tasks-v1-" + sid.Replace('-', '_');
-    private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    // Local UTF-8 pipe payloads need no ASCII-only escaping; retain the same frame bound and strict reader.
+    private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
         if (request.RunStates is not null || request.RunStatesSequence is not null) throw new InvalidDataException("运行状态只用于后台回执。");

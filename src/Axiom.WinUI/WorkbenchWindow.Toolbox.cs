@@ -33,6 +33,7 @@ public sealed partial class WorkbenchWindow
         ToolTipService.SetToolTip(headingText, "自动更新程序组，不改变已保存任务的名单。");
         BuildTrayTool();
         BuildBrightnessWheelTool();
+        BuildHostsTool();
     }
     private static string SteamStatusText(SteamToolSnapshot snapshot) => snapshot.Scanning ? "正在后台检查，刷新状态可查看最新结果。" :
         snapshot.LastScanUtc is null ? "尚未检查，开启自动更新或点击立即检查更新。" :

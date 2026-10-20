@@ -14,7 +14,7 @@
 
 `IAutomationTaskBackend` 声明实际支持的 `TaskCombination`，负责该组合的读取、持久化、版本检查、运行生命周期和删除；`AutomationTaskRouter` 拒绝未接通及重复组合。宿主注册适配器，不能因为两个描述存在就假定它们能够组合执行。跨不同后端修改现有任务目前拒绝，用户需新建；不尝试跨存储非原子迁移。
 
-WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提交通用 save/delete/read/shutdown。SID 与会话来自 OS，不能相信请求中的身份；有大小、并发和期限上限。UI 不碰 Provider 或数据库，不轮询。
+WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提交通用 save/delete/read/shutdown。SID 与会话来自 OS，不能相信请求中的身份；有大小、并发和期限上限。JSON以UTF-8传送Unicode正文，避免中文目录全部转为ASCII转义后挤占大小预算；仍保留262144字节帧上限、严格未知字段检查和完整往返，不截断目录/任务或放宽上限。UI 不碰 Provider 或数据库，不轮询。
 
 ## 接入一种能力
 

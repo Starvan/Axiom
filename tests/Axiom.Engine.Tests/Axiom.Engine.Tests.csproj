@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.Hosts.cs" Link="PluginTaskRuntime.Hosts.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/ClockEventCapabilityProvider.cs" Link="ClockEventCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.RunConditions.cs" Link="PluginTaskRuntime.RunConditions.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.BrightnessWheel.cs" Link="PluginTaskRuntime.BrightnessWheel.cs" />
@@ -108,6 +109,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/MonthlyEventSource.cs" Link="MonthlyEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionCapabilityProvider.cs" Link="SessionCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/AudioCapabilityProvider.cs" Link="AudioCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsAudioEvents.cs" Link="WindowsAudioEvents.cs" />
