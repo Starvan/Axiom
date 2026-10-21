@@ -138,7 +138,9 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                 response.Status is not (OutcomeStatus.Succeeded or OutcomeStatus.Failed or OutcomeStatus.Rejected) || string.IsNullOrWhiteSpace(response.Reason))
                 throw new InvalidDataException("Provider 回执无效。");
             await CompleteWindowAttemptsAsync(attempts, response.Status.Value);
-            Record(response.Status == OutcomeStatus.Succeeded ? "自动化动作已完成" : "自动化动作未完成", response.Reason,
+            Record(invocation.CapabilityId == TrayCapabilities.Hide
+                ? response.Status == OutcomeStatus.Succeeded ? "托盘检查完成" : "托盘处理未完成"
+                : response.Status == OutcomeStatus.Succeeded ? "自动化动作已完成" : "自动化动作未完成", response.Reason,
                 response.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Error);
             return TrayOutcome(command, new(response.Status.Value, response.Reason, command.CommandId));
         }

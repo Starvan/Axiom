@@ -166,8 +166,8 @@ internal sealed partial class PluginTaskRuntime
             {
                 trayRunning = false; trayLastRun = DateTimeOffset.UtcNow; trayLastStatus = outcome.Status; trayResult = outcome.Reason;
                 trayState = outcome.Status == OutcomeStatus.Succeeded ? task.Detection.Parameters["mode"] == TrayTool.Continuous
-                    ? trayMonitoring ? "本次隐藏已完成；正在监听图标重新出现。" : "本次隐藏已完成；持续监听尚未就绪。"
-                    : "本次隐藏已完成；等待下次 Axiom 后台启动。" : "本次隐藏未完成或未确认；可查看结果并重试。";
+                    ? trayMonitoring ? "托盘检查已完成；正在监听图标重新出现。" : "托盘检查已完成；持续监听尚未就绪。"
+                    : "托盘检查已完成；等待下次 Axiom 后台启动。" : "本次隐藏未完成或未确认；可查看结果并重试。";
             }
         }
         return outcome;
@@ -207,7 +207,7 @@ internal sealed partial class PluginTaskRuntime
                         if (token.IsCancellationRequested || stopping || TrayTask()?.Version != task.Version) return;
                         trayMonitoring = true;
                         if (sequence == 0 && !trayRunning && trayPendingVersion is null && trayLastStatus == OutcomeStatus.Succeeded)
-                            trayState = "本次隐藏已完成；正在监听图标重新出现。";
+                            trayState = "托盘检查已完成；正在监听图标重新出现。";
                         if (sample.Boolean == false && trayPendingVersion == task.Version && trayPendingAutomatic) trayPendingVersion = null;
                         if (sequence == 0 ? connectedOnce && sample.Boolean == true : sample.Number > counter && sample.Boolean == true)
                             QueueTrayTrigger(task.Version, true);

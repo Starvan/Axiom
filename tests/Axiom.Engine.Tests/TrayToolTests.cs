@@ -108,8 +108,10 @@ public sealed class TrayToolTests
                 Assert.Contains("TraySample.exe", first.Request.Invocation.Parameters["executable"]);
                 Assert.Equal(restart ? "60" : "30", first.Request.Invocation.Parameters["waitSeconds"]);
                 Assert.True(first.Request.DeadlineUtc > DateTimeOffset.UtcNow.AddSeconds(120), "Host must not cut off the longer native wait at the old 40-second deadline.");
-                first.Complete(OutcomeStatus.Succeeded, "fixture hidden");
+                first.Complete(OutcomeStatus.Succeeded, restart ? "无需处理 1 个目标。" : "fixture hidden");
                 await Until(() => runtime.ReadTrayTool().LastStatus == OutcomeStatus.Succeeded);
+                Assert.Contains("检查已完成", runtime.ReadTrayTool().State);
+                Assert.DoesNotContain("隐藏已完成", runtime.ReadTrayTool().State);
                 if (!restart)
                 {
                     var saved = await runtime.SaveTrayToolAsync(Settings(1, path: @"C:\Apps\Changed.exe", waitSeconds: 7), default);

@@ -19,8 +19,14 @@ public static class WindowsProgramBatch
         var results = await Task.WhenAll(paths.Select(Run));
         token.ThrowIfCancellationRequested();
         if (results.Length == 1) return results[0];
-        var completed = results.Count(r => r.Success);
-        return new(completed == results.Length, $"已完成 {completed}/{results.Length} 个目标。\n" +
-            string.Join("\n", results.Select((r, i) => $"{paths[i]} · {(r.Success ? "完成" : "未完成")}：{r.Reason}")));
+        var skipped = results.Count(r => r.Success && r.Skipped);
+        var completed = results.Count(r => r.Success && !r.Skipped);
+        var failed = results.Count(r => !r.Success);
+        var summary = skipped == results.Length ? $"无需处理 {skipped} 个目标。" :
+            $"完成 {completed} 个" + (skipped > 0 ? $"，无需处理 {skipped} 个" : "") + (failed > 0 ? $"，失败 {failed} 个" : "") + "。";
+        var errors = results.Select((result, index) => (Result: result, Path: paths[index])).Where(item => !item.Result.Success)
+            .GroupBy(item => item.Result.Reason, StringComparer.Ordinal)
+            .Select(group => string.Join("、", group.Select(item => item.Path)) + "：" + group.Key);
+        return new(failed == 0, summary + (failed > 0 ? "\n" + string.Join("\n", errors) : "")) { Skipped = skipped == results.Length };
     }
 }

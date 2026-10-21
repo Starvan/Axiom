@@ -54,7 +54,7 @@ public sealed class WindowActionTests
         var missing = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".exe");
         var result = await WindowsProgramBatch.ExecuteAsync([missing, Environment.ProcessPath!], (path, token) =>
             WindowsWindowActions.CloseAsync(path, target.Title, TimeSpan.FromSeconds(1), token), default);
-        Assert.False(result.Success); Assert.Contains("1/2", result.Reason); Assert.False(target.Visible); Assert.Equal(1, target.CloseCount);
+        Assert.False(result.Success); Assert.Contains("完成 1 个", result.Reason); Assert.Contains("失败 1 个", result.Reason); Assert.False(target.Visible); Assert.Equal(1, target.CloseCount);
     }
     [Fact(Timeout = 10000)]
     public async Task CancelledWaitCannotCloseWindowShownAfterCancellationAndTimeoutDoesNotSucceed()

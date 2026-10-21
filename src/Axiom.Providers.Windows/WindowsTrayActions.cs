@@ -129,13 +129,14 @@ public static class WindowsTrayActions
             while (true)
             {
                 deadline.Token.ThrowIfCancellationRequested();
-                var result = HideCurrent(path, deadline.Token);
+                // The appearance deadline must not turn a partially executed native operation into a no-op.
+                var result = HideCurrent(path, token);
                 if (result is not null) return result;
                 await notifications.Events.Reader.ReadAsync(deadline.Token);
             }
         }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        { return new(false, $"等待托盘图标超时：{Path.GetFileName(path)} 未发现可识别图标。程序可能未运行、没有图标或系统记录不支持；未结束程序。"); }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !token.IsCancellationRequested)
+        { token.ThrowIfCancellationRequested(); return new(true, "未发现可识别图标，无需处理。") { Skipped = true }; }
     }
     private sealed record Registration(string Path, uint? Id, Guid Guid);
     private static Registration[] ReadRegistrations()
@@ -202,7 +203,7 @@ public static class WindowsTrayActions
                 else failed++;
             }
             if (hidden == 0 && failed == 0) return null;
-            return new(failed == 0, $"{Path.GetFileName(path)}：已隐藏 {hidden} 个托盘图标" + (failed > 0 ? $"，{failed} 个未确认移除。" : "；保留后台进程，未关闭程序。") + " 软件重新创建图标后可能再出现。");
+            return new(failed == 0, $"{Path.GetFileName(path)}：已隐藏 {hidden} 个图标" + (failed > 0 ? $"，{failed} 个未确认移除。" : "。"));
         }
         finally { foreach (var process in matches) process.Dispose(); }
     }
