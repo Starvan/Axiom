@@ -46,9 +46,10 @@ public sealed partial class WorkbenchWindow
     private void BuildUsage()
     {
         content.Children.Add(Text("记录一段使用过程，寻找可自动化的日常操作。关闭窗口即结束观察。", 14, Muted));
-        content.Children.Add(Help("仅在你开启后记录选定的应用、会话、供电、低电量、显示模式、USB类别、默认音频及网络可用性元数据；不采集窗口标题、正文、按键、剪贴板、截图或命令行。关闭此窗口立即结束观察；自动化规则继续工作。", "会记录哪些内容"));
-        content.Children.Add(Help("最多 120 分钟、4096 条事件、128 个应用；本地最多保留 12 次、7 天。未知来源不能当作手动操作。", "记录范围与保留期限"));
-        var actions = Row(8);
+        var privacy = Row(4);
+        privacy.Children.Add(Help("仅在你开启后记录选定的应用、会话、供电、低电量、显示模式、USB类别、默认音频及网络可用性元数据；不采集窗口标题、正文、按键、剪贴板、截图或命令行。关闭此窗口立即结束观察；自动化规则继续工作。", "会记录哪些内容"));
+        privacy.Children.Add(Help("最多 120 分钟、4096 条事件、128 个应用；本地最多保留 12 次、7 天。未知来源不能当作手动操作。", "记录范围与保留期限"));
+        var actions = FlowActions();
         var start = Action("开始观察", true); start.IsEnabled = reachable && usageSnapshot?.ActiveId is null; start.Click += async (_, _) => await StartUsageAsync(); actions.Children.Add(start);
         var refresh = Action("刷新状态"); refresh.Click += async (_, _) => await UsageCommandAsync("read"); actions.Children.Add(refresh);
         var active = usageSnapshot?.Sessions.FirstOrDefault(s => s.Id == usageSnapshot.ActiveId);
@@ -57,8 +58,9 @@ public sealed partial class WorkbenchWindow
             var pause = Action(active.State == "paused" ? "继续" : "暂停"); pause.Click += async (_, _) => await UsageCommandAsync(active.State == "paused" ? "resume" : "pause"); actions.Children.Add(pause);
             var stop = Action("结束"); stop.Click += async (_, _) => await UsageCommandAsync("stop"); actions.Children.Add(stop);
         }
-        content.Children.Add(actions);
-        var catalogButtons = Row(8);
+        pageTools.Children.Add(actions);
+        content.Children.Add(privacy);
+        var catalogButtons = FlowActions();
         foreach (var item in new[] { (Operation: "catalog", Label: "导出能力 JSON…"), (Operation: "catalog-readable", Label: "查看能力开发资料…") })
         {
             var button = Action(item.Label); button.Click += async (_, _) =>
@@ -76,11 +78,13 @@ public sealed partial class WorkbenchWindow
         sessions.SelectionChanged += async (_, _) => { if (sessions.SelectedIndex < 0 || busy) return; usageSelection = usageSnapshot.Sessions[sessions.SelectedIndex].Id; usageOffset = 0; await UsageCommandAsync("read"); };
         content.Children.Add(sessions);
         if (selected is null) { content.Children.Add(Text("没有观察记录。先开启一次你愿意记录的使用过程。", 14, Muted)); return; }
-        content.Children.Add(Text("本次范围：" + string.Join("、", new[] { selected.Options.Foreground ? "前台应用" : null, selected.Options.ProcessStarts ? "程序启动" : null, selected.Options.ProcessExits ? "本次新进程退出" : null, selected.Options.WindowStates ? "窗口显示/隐藏/状态/近似布局" : null, selected.Options.AudioEvents ? "默认播放设备/默认通信麦克风变化" : null, selected.Options.SystemEvents ? "会话/供电/低电量/显示模式/USB类别/网络可用性" : null }.Where(x => x is not null)), 13, Muted));
-        content.Children.Add(Text("排除应用：" + (selected.Options.ExcludedApplications.Length == 0 ? "无" : string.Join("、", selected.Options.ExcludedApplications)), 12, Muted));
-        content.Children.Add(Text("本次目的：" + (selected.Options.Purpose.Length == 0 ? "未填写" : selected.Options.Purpose), 13, Muted));
+        var scope = Column(6);
+        scope.Children.Add(Text("本次范围：" + string.Join("、", new[] { selected.Options.Foreground ? "前台应用" : null, selected.Options.ProcessStarts ? "程序启动" : null, selected.Options.ProcessExits ? "本次新进程退出" : null, selected.Options.WindowStates ? "窗口显示/隐藏/状态/近似布局" : null, selected.Options.AudioEvents ? "默认播放设备/默认通信麦克风变化" : null, selected.Options.SystemEvents ? "会话/供电/低电量/显示模式/USB类别/网络可用性" : null }.Where(x => x is not null)), 13, Muted));
+        scope.Children.Add(Text("排除应用：" + (selected.Options.ExcludedApplications.Length == 0 ? "无" : string.Join("、", selected.Options.ExcludedApplications)), 12, Muted));
+        scope.Children.Add(Text("本次目的：" + (selected.Options.Purpose.Length == 0 ? "未填写" : selected.Options.Purpose), 13, Muted));
+        content.Children.Add(Details("本次记录范围", scope));
         foreach (var gap in selected.Gaps) content.Children.Add(Text(gap, 12, Amber));
-        var tools = Row(8);
+        var tools = FlowActions();
         var annotate = Action("补充本次目的…"); annotate.Click += async (_, _) => await AnnotateUsageAsync(selected); tools.Children.Add(annotate);
         var export = Action("预览分析摘要…"); export.Click += async (_, _) => await PreviewUsageExportAsync(selected.Id); tools.Children.Add(export);
         var import = Action("导入 AI 建议…"); import.Click += async (_, _) => await ImportUsageAsync(selected.Id); tools.Children.Add(import);

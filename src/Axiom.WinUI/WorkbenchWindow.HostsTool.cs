@@ -31,7 +31,7 @@ public sealed partial class WorkbenchWindow
             (task.Paused ? "已暂停 · " : "已启用，等待检测 · ") + DetectionSummary(task), 13, valid ? Muted : Amber));
         if (task is not null && RunState(task) is { AutomaticallyPaused: true } paused) body.Children.Add(Text(paused.Reason ?? "等待运行条件满足。", 12, Amber));
         body.Children.Add(Text("启用和保存不表示写入成功；每次更新结果见活动记录。暂停不撤销已写入的记录。", 12, Muted));
-        var actions = Row(8); var settings = Action("工具设置");
+        var actions = FlowActions(); var settings = Action("工具设置");
         settings.IsEnabled = reachable && valid && status?.Capabilities.Any(c => c.Id == HostsCapabilities.Update) == true;
         settings.Click += (_, _) =>
         {
@@ -45,7 +45,7 @@ public sealed partial class WorkbenchWindow
                     descriptor.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!));
                 editor.LoadDraft(new(HostsCapabilities.TaskId, 0, "定时Hosts", true,
                     new(IntervalCapabilities.Elapsed, 1, ImmutableDictionary<string, string>.Empty.Add("minutes", "60")), action));
-                editing = true; notice.IsOpen = false; Render();
+                editing = true; pageScrollToTop = true; notice.IsOpen = false; Render();
             }
         };
         actions.Children.Add(settings);

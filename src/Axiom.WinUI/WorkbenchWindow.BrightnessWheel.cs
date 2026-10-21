@@ -36,7 +36,7 @@ public sealed partial class WorkbenchWindow
         }
         else body.Children.Add(Text("尚未读取亮度滚轮状态，请刷新后重试。", 13, Muted));
         if (brightnessWheelError is not null) body.Children.Add(Text(brightnessWheelError, 12, Amber));
-        var actions = Row(10); var settings = Action("工具设置"); settings.IsEnabled = reachable;
+        var actions = FlowActions(); var settings = Action("工具设置"); settings.IsEnabled = reachable;
         settings.Click += async (_, _) => await OpenBrightnessWheelSettingsAsync(); actions.Children.Add(settings);
         var resume = Action("恢复自动亮度"); resume.IsEnabled = reachable && brightnessWheel?.ManualTakenOver == true && !brightnessWheelUnconfirmed;
         resume.Click += async (_, _) =>

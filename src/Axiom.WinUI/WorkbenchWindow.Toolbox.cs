@@ -25,7 +25,7 @@ public sealed partial class WorkbenchWindow
         ToolTipService.SetToolTip(toggle, "开启后立即检查，之后每次后台启动更新。关闭后保留已有程序组。");
         if (steamTool is not null) body.Children.Add(Text(SteamStatusText(steamTool), 13, Muted));
         if (steamToolError is not null || steamTool?.Error is not null) body.Children.Add(Text(steamToolError ?? steamTool!.Error!, 12, Amber));
-        var buttons = Row(10); var settings = Action("工具设置"); settings.IsEnabled = reachable;
+        var buttons = FlowActions(); var settings = Action("工具设置"); settings.IsEnabled = reachable;
         settings.Click += async (_, _) => await OpenSteamSettingsAsync(); buttons.Children.Add(settings);
         var refresh = Action("立即检查更新"); refresh.IsEnabled = reachable;
         refresh.Click += async (_, _) => { if (busy) return; SetBusy(true); try { await RefreshSteamToolAsync(); await ReadGroupsAsync(); } finally { SetBusy(false); Render(); } };

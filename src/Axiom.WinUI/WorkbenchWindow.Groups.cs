@@ -9,7 +9,7 @@ public sealed partial class WorkbenchWindow
     private ProcessGroup[] processGroups = [];
     private string? groupsError;
     private bool groupEditing;
-    private bool viewingProcessGroups;
+    private string groupSearch = "";
     private ProcessGroup? groupOriginal, groupDraft;
     private bool GroupDirty => groupDraft is not null && (groupOriginal is null || groupOriginal.Name != groupDraft.Name ||
         !groupOriginal.Entries.SequenceEqual(groupDraft.Entries));
@@ -116,7 +116,7 @@ public sealed partial class WorkbenchWindow
     {
         if (groupEditing && groupDraft is not null)
         {
-            var back = Action("← 返回进程组"); back.Click += async (_, _) => { if (await ConfirmDiscardAsync()) { groupEditing = false; Render(); } };
+            var back = Action("← 返回程序组"); back.Click += async (_, _) => { if (await ConfirmDiscardAsync()) { groupEditing = false; Render(); } };
             content.Children.Add(back);
             var name = new TextBox { Header = "组名称", MaxLength = 80, PlaceholderText = "例如 HDR 游戏、常用工具", Text = groupDraft.Name };
             name.TextChanged += (_, _) => groupDraft = groupDraft! with { Name = name.Text }; content.Children.Add(name);
@@ -126,7 +126,7 @@ public sealed partial class WorkbenchWindow
                 groupDraft = groupDraft with { Entries = [.. ProcessGroups.SplitNames(value).Select(x =>
                     old.FirstOrDefault(e => e.ProcessName.Equals(x, StringComparison.OrdinalIgnoreCase)) ?? new ProcessGroupEntry(x, x))] };
             }, false)));
-            var save = Action("保存进程组", true); save.Click += async (_, _) => await SaveGroupAsync(groupDraft!, true);
+            var save = Action("保存程序组", true); save.Click += async (_, _) => await SaveGroupAsync(groupDraft!, true);
             footer.Children.Add(save);
             var cancel = Action("取消"); cancel.Click += async (_, _) => { if (await ConfirmDiscardAsync()) { groupEditing = false; Render(); } }; footer.Children.Add(cancel);
             if (groupDraft.Version > 0)
@@ -147,38 +147,51 @@ public sealed partial class WorkbenchWindow
             }
             return;
         }
-        if (!viewingProcessGroups)
-        {
-            content.Children.Add(Text("选择组类型", 14, Muted));
-            content.Children.Add(BuildCatalogEntry("进程组", "整理常用程序，在任务中全选或按需勾选。", "\uE8F1", "管理进程组", () =>
-            { viewingProcessGroups = true; Render(); }, $"已保存 {processGroups.Length} 个组"));
-            if (groupsError is not null) content.Children.Add(Text(groupsError, 13, Amber));
-            return;
-        }
-        var returnHome = Action("← 返回组类型"); returnHome.Click += (_, _) => { viewingProcessGroups = false; Render(); }; content.Children.Add(returnHome);
-        var header = Column(10); header.Children.Add(Text("进程组", 20, Ink, true));
-        header.Children.Add(Text("把常用程序整理成组，创建任务时即可全选或单独勾选。", 13, Muted));
-        var create = Action("＋ 新建进程组", true); create.Click += (_, _) => EditGroup(null); header.Children.Add(create);
-        content.Children.Add(Card(header, Soft));
+        var search = new TextBox { PlaceholderText = "查找程序组", Text = groupSearch, MaxLength = 120 };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(search, "查找程序组");
+        var create = Action("＋ 新建程序组", true); create.Click += (_, _) => EditGroup(null);
+        var toolbar = new Grid { ColumnSpacing = 12 };
+        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        toolbar.Children.Add(search); Grid.SetColumn(create, 1); toolbar.Children.Add(create); pageTools.Children.Add(toolbar);
         if (groupsError is not null) content.Children.Add(Text(groupsError, 13, Amber));
-        if (processGroups.Length == 0) content.Children.Add(Text("还没有进程组。手动添加程序，或到工具箱导入 Steam 游戏。", 14, Muted));
-        foreach (var group in processGroups)
+        var list = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch }; content.Children.Add(list);
+        search.TextChanged += (_, _) => { groupSearch = search.Text; Draw(); };
+        void Draw()
         {
-            var body = Column(10); body.Children.Add(Text(group.Name, 18, Ink, true)); body.Children.Add(Text($"{group.Entries.Length} 个程序", 12, Muted));
-            body.Children.Add(Text(string.Join(" · ", group.Entries.Take(5).Select(x => x.DisplayName)) + (group.Entries.Length > 5 ? " …" : ""), 13, Muted));
-            if (group.AutoManaged)
+            var rows = Column(0);
+            var groups = processGroups.Where(group => group.Name.Contains(groupSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (groups.Length == 0) rows.Children.Add(new Border { Padding = new Thickness(20),
+                Child = Text(processGroups.Length == 0 ? "还没有程序组，创建一个开始整理。" : "没有匹配的程序组。", 14, Muted) });
+            foreach (var group in groups)
             {
-                body.Children.Add(Text("由 Steam 工具自动维护；排除项在工具设置中管理。", 12, Muted));
-                var settings = Action("工具设置"); settings.Click += async (_, _) => { page = Page.Toolbox; viewingProcessGroups = false; Render(); await OpenSteamSettingsAsync(); }; body.Children.Add(settings);
+                var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(16, 14, 16, 14) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(CategoryTile("程序"));
+                var body = Column(4); body.Children.Add(Preview(group.Name, 16, Ink, true));
+                body.Children.Add(Preview($"{group.Entries.Length} 个程序" + (group.AutoManaged ? " · Steam 自动整理" : "") +
+                    (group.Entries.Length == 0 ? "" : " · " + string.Join("、", group.Entries.Take(3).Select(x => x.DisplayName))), 12, Muted));
+                Grid.SetColumn(body, 1); row.Children.Add(body);
+                var edit = Action(group.AutoManaged ? "工具设置" : "编辑");
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(edit, (group.AutoManaged ? "工具设置 " : "编辑组 ") + group.Name);
+                edit.VerticalAlignment = VerticalAlignment.Center;
+                if (group.AutoManaged) edit.Click += async (_, _) => { page = Page.Toolbox; pageScrollToTop = true; Render(); await OpenSteamSettingsAsync(); };
+                else edit.Click += (_, _) => EditGroup(group);
+                Grid.SetColumn(edit, 2); row.Children.Add(edit);
+                rows.Children.Add(new Border { Child = row, BorderBrush = Line,
+                    BorderThickness = new Thickness(0, rows.Children.Count == 0 ? 0 : 1, 0, 0) });
             }
-            else { var edit = Action("编辑组"); edit.Click += (_, _) => EditGroup(group); body.Children.Add(edit); }
-            content.Children.Add(Card(body));
+            list.Content = Card(rows, Surface, 0);
         }
+        Draw();
     }
+
     private void EditGroup(ProcessGroup? group)
     {
         groupOriginal = group; groupDraft = group ?? new(Guid.NewGuid().ToString("D"), 0, "", []);
-        groupEditing = true; notice.IsOpen = false; Render();
+        groupEditing = true; pageScrollToTop = true; notice.IsOpen = false; Render();
     }
     private async Task<bool> SaveGroupAsync(ProcessGroup group, bool leaveEditor)
     {

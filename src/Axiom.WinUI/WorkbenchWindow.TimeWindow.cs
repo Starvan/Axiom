@@ -22,14 +22,14 @@ public sealed partial class WorkbenchWindow
         var current = editor.TimeWindow ?? new WeeklyTimeWindow(540, 1080, 62);
         var start = new TimePicker { Header = "开始时间", ClockIdentifier = "24HourClock", Time = TimeSpan.FromMinutes(current.StartMinute) };
         var end = new TimePicker { Header = "结束时间（不包含）", ClockIdentifier = "24HourClock", Time = TimeSpan.FromMinutes(current.EndMinute) };
-        settings.Children.Add(start); settings.Children.Add(end);
+        settings.Children.Add(SideBySide(start, end));
         var days = Enumerable.Range(0, 7).Select(i => (i + 1) % 7)
             .Select(d => (Day: d, Box: new CheckBox { Content = WeekdayLabels[d], IsChecked = (current.Days & (1 << d)) != 0 })).ToArray();
         var dayPanel = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 4 };
         foreach (var day in days) dayPanel.Children.Add(day.Box);
         settings.Children.Add(dayPanel);
-        settings.Children.Add(Text("按电脑当前本地时间。结束早于开始表示跨午夜，后半段属于开始所在的星期；至少选择一天，起止不能相同。", 12, Muted));
-        settings.Children.Add(Text("时段外触发直接跳过，不在开窗时补执行；延迟或排队跨过结束时刻也跳过。已经开始的动作不会因此撤回。", 12, Muted));
+        settings.Children.Add(Help("按电脑本地时间；结束早于开始表示跨午夜，至少选一天，起止不能相同。", "时段填写说明"));
+        settings.Children.Add(Help("时段外触发跳过，不补执行；排队跨过结束时间也跳过。已经开始的动作不受影响。", "执行时段说明"));
         if (!supported) panel.Children.Add(Text("当前动作不支持时间段限制。请关闭此限制，或选择一次性动作后保存。原设置仍保留。", 12, Amber));
         panel.Children.Add(settings);
         void SaveDraft()

@@ -1,3 +1,4 @@
+using Axiom.Domain;
 using Axiom.WinUI;
 
 namespace Axiom.Engine.Tests;
@@ -33,4 +34,35 @@ public sealed class WorkbenchPresentationTests
     [InlineData(false, false, false, "当前状态未确认，请刷新后查看。")]
     public void UnknownOrDisconnectedNeverReportsCurrentSuccess(bool? enabled, bool? active, bool reachable, string expected)
         => Assert.Equal(expected, Axiom.Infrastructure.GameHdrTaskPresentation.DisplayState(enabled, active, reachable));
+    [Fact]
+    public void ConsecutiveActivityGroupsPreserveDistinctResultsSubjectsAndBoundaries()
+    {
+        var noon = new DateTimeOffset(DateTime.Today.AddHours(12));
+        var normal = new ActivityEvent(noon, "自动化", "已完成", "程序 A", ActivityLevel.Success, "任务 A");
+        ActivityRecord[] records = [new(9, normal), new(8, normal with { AtUtc = noon.AddSeconds(-1) }),
+            new(7, normal with { Level = ActivityLevel.Warning, Detail = "设备未回应" }),
+            new(6, normal with { Subject = "任务 B" }), new(5, normal),
+            new(4, normal with { AtUtc = noon.AddDays(-1) })];
+        var groups = WorkbenchPresentation.GroupActivity(records);
+        Assert.Equal(new[] { 2, 1, 1, 1, 1 }, groups.Select(g => g.Count));
+        Assert.Same(records[0], groups[0].Latest);
+        Assert.Equal(noon.AddSeconds(-1), groups[0].FirstAtUtc);
+        Assert.Equal("设备未回应", groups[1].Latest.Event.Detail);
+        Assert.Equal("任务 B", groups[2].Latest.Event.Subject);
+        Assert.Equal(6, groups.Sum(g => g.Count));
+        Assert.Empty(WorkbenchPresentation.GroupActivity([]));
+    }
+    [Fact]
+    public void ActivityRangeUsesEventTimesWhenDurableWritesArriveOutOfOrder()
+    {
+        var time = new DateTimeOffset(DateTime.Today.AddHours(12));
+        var first = new ActivityEvent(time, "自动化", "检测恢复", "已连接");
+        var group = Assert.Single(WorkbenchPresentation.GroupActivity([
+            new ActivityRecord(3, first), new ActivityRecord(2, first with { AtUtc = time.AddSeconds(2) }),
+            new ActivityRecord(1, first with { AtUtc = time.AddSeconds(-2) })]));
+        Assert.Equal(3, group.Count);
+        Assert.Equal(time.AddSeconds(-2), group.FirstAtUtc);
+        Assert.Equal(time.AddSeconds(2), group.LastAtUtc);
+        Assert.Equal(3, group.Latest.Id);
+    }
 }

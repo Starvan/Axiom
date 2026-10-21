@@ -49,7 +49,7 @@ public sealed partial class WorkbenchWindow
         var buttons = Row(8); buttons.Children.Add(RefreshButton());
         var add = Action("＋  新建任务", true); add.IsEnabled = status is not null;
         add.Click += (_, _) => SelectRule(null); buttons.Children.Add(add);
-        Grid.SetColumn(buttons, 1); toolbar.Children.Add(buttons); content.Children.Add(toolbar);
+        Grid.SetColumn(buttons, 1); toolbar.Children.Add(buttons); pageTools.Children.Add(toolbar);
         var template = Action("常用场景"); template.IsEnabled = reachable && status is not null;
         template.Click += async (_, _) => await ChooseTaskTemplateAsync(); buttons.Children.Insert(0, template);
         void FitToolbar()
@@ -76,10 +76,10 @@ public sealed partial class WorkbenchWindow
             filter.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var search = new TextBox { PlaceholderText = "任务名称、检测或动作名称", Text = ruleSearch, MaxLength = 200 };
             var state = new ComboBox { ItemsSource = new[] { "全部任务", "仅已启用", "仅自动暂停", "仅手动暂停" }, SelectedIndex = ruleStateFilter, MinWidth = 150 };
-            filter.Children.Add(search); Grid.SetColumn(state, 1); filter.Children.Add(state); content.Children.Add(filter);
+            filter.Children.Add(search); Grid.SetColumn(state, 1); filter.Children.Add(state); pageTools.Children.Add(filter);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(search, "查找任务");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(state, "任务状态筛选");
-            var shown = Text("", 12, Muted); var cards = Column(0); content.Children.Add(shown); content.Children.Add(Card(cards, Surface, 0));
+            var shown = Text("", 12, Muted); var cards = Column(0); pageTools.Children.Add(shown); content.Children.Add(Card(cards, Surface, 0));
             search.TextChanged += (_, _) => { ruleSearch = search.Text; ShowRules(); };
             state.SelectionChanged += (_, _) => { ruleStateFilter = Math.Max(0, state.SelectedIndex); ShowRules(); };
             ShowRules();
@@ -156,7 +156,7 @@ public sealed partial class WorkbenchWindow
         var detectionHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var actionHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var save = Action("保存任务", true); save.IsEnabled = EditorCanSave; save.Click += async (_, _) => await SaveAsync();
-        var behavior = Column(12); behavior.Children.Add(Text("03   运行方式", 18, Ink, true));
+        var behavior = Column(12); behavior.Children.Add(Text("运行设置", 18, Ink, true));
         var actionDescriptor = FindCapability(editor.Action, TaskCapabilityKind.Action);
         var timeWindowHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var runConditionsHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -181,28 +181,31 @@ public sealed partial class WorkbenchWindow
             UpdateTimeWindow();
         }
         void BuildActions() => actionHost.Content = BuildCapabilitySection(TaskCapabilityKind.Action,
-            HostsEditor ? "Hosts 与 DNS 设置" : "02   执行什么", "选择条件满足后要执行的动作。", editor.Action, SelectionChanged, HostsEditor);
+            HostsEditor ? "Hosts 与 DNS 设置" : "执行什么", "选择条件满足后要执行的动作。", editor.Action, SelectionChanged, HostsEditor);
         detectionHost.Content = BuildDetectionSection(SelectionChanged); content.Children.Add(detectionHost);
         BuildActions(); content.Children.Add(actionHost);
-        behavior.Children.Add(Details("执行与结束方式", behaviorText));
+        var explanation = Details("执行与结束方式", behaviorText);
         behavior.Children.Add(runConditionsHost);
         UpdateTimeWindow(); behavior.Children.Add(timeWindowHost);
-        var enabled = new ToggleSwitch { Header = "启用任务", OnContent = "保存后按运行条件检测", OffContent = "只保存，暂不检测", IsOn = !editor.Paused };
-        enabled.Toggled += (_, _) => editor.Paused = !enabled.IsOn; behavior.Children.Add(enabled);
+        var enabled = new ToggleSwitch { Header = "启用任务", OnContent = "保存后启用", OffContent = "暂不启用", IsOn = !editor.Paused };
+        enabled.Toggled += (_, _) => editor.Paused = !enabled.IsOn; behavior.Children.Insert(1, enabled);
+        behavior.Children.Add(explanation);
         behavior.Children.Add(warningDetails);
         content.Children.Add(Card(behavior));
         footer.Children.Add(save);
         var cancel = Action("取消"); cancel.Click += async (_, _) => { if (!await ConfirmDiscardAsync()) return; editing = false; Render(); }; footer.Children.Add(cancel);
         if (editor.Version > 0)
         {
-            var delete = Action("删除任务"); delete.Click += async (_, _) => await DeleteAsync(); content.Children.Add(delete);
-            var reload = Action("重新读取已保存版本"); reload.Click += async (_, _) =>
+            var more = Action("更多操作"); var menu = new MenuFlyout(); more.Flyout = menu;
+            var delete = new MenuFlyoutItem { Text = "删除任务", Icon = new SymbolIcon(Symbol.Delete) };
+            delete.Click += async (_, _) => await DeleteAsync();
+            var reload = new MenuFlyoutItem { Text = "重读已保存版本", Icon = new SymbolIcon(Symbol.Refresh) }; reload.Click += async (_, _) =>
             {
                 if (!await ConfirmDiscardAsync()) return;
                 await RefreshAsync(); if (!reachable) return;
                 var saved = status?.Tasks.FirstOrDefault(x => x.Id == editor.Id);
                 if (saved is null) { ShowNotice("任务已不存在，当前输入仍保留。"); return; } SelectRule(saved);
-            }; content.Children.Add(reload);
+            }; menu.Items.Add(reload); menu.Items.Add(delete); footer.Children.Add(more);
         }
     }
     private Border BuildCapabilitySection(TaskCapabilityKind kind, string title, string hint, TaskInvocation? invocation, Action<TaskCapabilityKind> changed, bool fixedCapability = false)
@@ -222,12 +225,25 @@ public sealed partial class WorkbenchWindow
                 parameters.Children.Add(Text(current is null ? "选择类型后填写对应参数。" : "原类型暂不可用。配置已保留，请恢复对应功能后再编辑。", 12, Muted));
                 return;
             }
-            parameters.Children.Add(Help(descriptor.Description, "类型说明"));
-            foreach (var field in descriptor.Fields.Where(f => f.Group is null)) AddField(parameters, descriptor, current!, field);
+            void Fields(StackPanel host, IEnumerable<TaskField> source)
+            {
+                var fields = source.ToArray();
+                for (var i = 0; i < fields.Length; i++)
+                {
+                    if (fields[i].Kind == TaskFieldKind.Number && i + 1 < fields.Length && fields[i + 1].Kind == TaskFieldKind.Number)
+                    {
+                        var left = Column(6); var right = Column(6);
+                        AddField(left, descriptor, current!, fields[i]); AddField(right, descriptor, current!, fields[++i]);
+                        host.Children.Add(SideBySide(left, right));
+                    }
+                    else AddField(host, descriptor, current!, fields[i]);
+                }
+            }
+            Fields(parameters, descriptor.Fields.Where(f => f.Group is null));
             foreach (var group in descriptor.Fields.Where(f => f.Group is not null).GroupBy(f => f.Group))
             {
                 var extra = Column(12);
-                foreach (var field in group) AddField(extra, descriptor, current!, field);
+                Fields(extra, group);
                 parameters.Children.Add(new Expander { Header = group.Key, Content = extra,
                     HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
             }
@@ -363,14 +379,17 @@ public sealed partial class WorkbenchWindow
     {
         BuildThemeSettings();
         BuildShortcutSettings();
-        var body = Column(14); body.Children.Add(Text("后台运行", 20, Ink, true)); body.Children.Add(Text("关闭窗口后，已启用的任务继续工作。再次打开 Axiom 即可查看或修改。", 14));
-        content.Children.Add(Card(body));
-        var login = Column(12); login.Children.Add(Text("登录启动", 20, Ink, true));
+
+        var login = Column(10);
         var toggle = new ToggleSwitch { Header = "登录 Windows 后自动在后台运行", OnContent = "已登记",
             OffContent = startup is null || startup.Error is not null ? "状态未确认" : "已关闭",
             IsOn = startup?.Registered == true, IsEnabled = reachable && startup is not null && startup.Error is null && (startup.LauncherAvailable || startup.Registered) };
-        toggle.Toggled += async (_, _) => await SetLoginStartupAsync(toggle.IsOn); login.Children.Add(toggle);
-        login.Children.Add(Text("只启动后台，不打开窗口。需要管理任务时，再打开 Axiom。", 13, Muted));
+        toggle.Toggled += async (_, _) => await SetLoginStartupAsync(toggle.IsOn);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, "登录 Windows 后自动在后台运行");
+        toggle.Header = null;
+        var loginTitle = Column(5); loginTitle.Children.Add(Text("登录启动", 18, Ink, true));
+        loginTitle.Children.Add(Text("登录后在后台运行，关闭窗口也继续工作。", 13, Muted));
+        login.Children.Add(SideBySide(loginTitle, toggle));
         if (startupError is not null) login.Children.Add(Text(startupError, 13, Amber));
         else if (startup is null) login.Children.Add(Text("正在读取登录启动设置；可点击刷新重试。", 13, Muted));
         if (startup?.Registered == true && !startup.CurrentLocation)
@@ -381,8 +400,9 @@ public sealed partial class WorkbenchWindow
         }
         if (startup?.LauncherAvailable == false) login.Children.Add(Text("当前程序文件不完整，请从完整交付文件夹打开 Axiom 后设置。", 13, Amber));
         login.Children.Add(Help("以管理员权限在当前用户登录后启动后台，不保存密码。Windows 可能延迟启动；未自动运行时可检查任务计划程序中的 Axiom 任务。删除程序前请先关闭登录启动。", "登录启动说明"));
-        login.Children.Add(RefreshButton()); content.Children.Add(Card(login));
+        content.Children.Add(Card(login));
+        pageTools.Children.Add(RefreshButton());
         var stop = Column(12); stop.Children.Add(Text("停止所有任务", 20, Ink, true)); stop.Children.Add(Text("停止后不再检测；保存的任务会在下次打开时加载。", 14, Muted));
-        var button = Action("停止后台并退出"); button.Click += async (_, _) => await StopBackendAsync(); stop.Children.Add(button); content.Children.Add(Card(stop));
+        var button = Action("停止后台并退出"); button.Click += async (_, _) => await StopBackendAsync(); stop.Children.Add(button); content.Children.Add(Details("停止与退出", stop));
     }
 }

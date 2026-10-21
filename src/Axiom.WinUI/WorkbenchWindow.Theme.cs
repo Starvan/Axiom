@@ -57,10 +57,11 @@ public sealed partial class WorkbenchWindow
     private void BuildThemeSettings()
     {
         var body = Column(12);
-        body.Children.Add(Text("外观", 20, Ink, true));
+        var title = Column(5); title.Children.Add(Text("外观", 18, Ink, true));
+        title.Children.Add(Text("选择适合你的明暗主题。", 13, Muted));
         var picker = new ComboBox
         {
-            Header = "主题", ItemsSource = new[] { "跟随系统", "浅色", "深色" },
+            ItemsSource = new[] { "跟随系统", "浅色", "深色" },
             SelectedIndex = (int)themePreference, MinWidth = 200,
             HorizontalAlignment = HorizontalAlignment.Left
         };
@@ -82,7 +83,8 @@ public sealed partial class WorkbenchWindow
                 ShowNotice("未能保存外观设置，请重试。原设置已保留。");
             }
         };
-        body.Children.Add(picker);
+        picker.VerticalAlignment = VerticalAlignment.Center;
+        body.Children.Add(SideBySide(title, picker));
         ToolTipService.SetToolTip(picker, "自动保存并立即生效");
         content.Children.Add(Card(body));
     }

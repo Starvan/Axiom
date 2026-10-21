@@ -32,9 +32,9 @@ public sealed partial class WorkbenchWindow
     {
         var supported = status?.CompositeDetectionVersion >= 1;
         if (!supported && !editor.Composite)
-            return BuildCapabilitySection(TaskCapabilityKind.Detection, "01   检测什么", "选择需要检测的状态或事件。", editor.Detection, changed);
-        var panel = Column(12); panel.Children.Add(Text("01   检测什么", 18, Ink, true));
-        var mode = new ComboBox { Header = "检测方式", ItemsSource = new[] { "单个检测", "多个条件" }, SelectedIndex = editor.Composite ? 1 : 0,
+            return BuildCapabilitySection(TaskCapabilityKind.Detection, "何时执行", "选择需要检测的状态或事件。", editor.Detection, changed);
+        var panel = Column(12); panel.Children.Add(Text("何时执行", 18, Ink, true));
+        var mode = new ComboBox { ItemsSource = new[] { "一个条件", "多个条件" }, SelectedIndex = editor.Composite ? 1 : 0,
             HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = supported };
         mode.SelectionChanged += (_, _) =>
         {
@@ -47,6 +47,8 @@ public sealed partial class WorkbenchWindow
             }
             catch (ArgumentException failure) { ShowNotice(failure.Message); mode.SelectedIndex = editor.Composite ? 1 : 0; }
         };
+        mode.Width = 180; mode.HorizontalAlignment = HorizontalAlignment.Left;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(mode, "条件组合方式");
         panel.Children.Add(mode);
         if (!editor.Composite)
         {

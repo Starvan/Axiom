@@ -1,7 +1,36 @@
+using Axiom.Domain;
+
 namespace Axiom.WinUI;
 
 internal static class WorkbenchPresentation
 {
+    internal sealed record ActivityGroup(ActivityRecord Latest, DateTimeOffset FirstAtUtc, DateTimeOffset LastAtUtc, int Count);
+
+    // Adjacent identical records share one row; durable history and page cursors stay intact.
+    public static ActivityGroup[] GroupActivity(IEnumerable<ActivityRecord> records)
+    {
+        var groups = new List<ActivityGroup>();
+        foreach (var record in records)
+        {
+            var entry = record.Event;
+            if (groups.Count > 0)
+            {
+                var previous = groups[^1]; var last = previous.Latest.Event;
+                if (entry.Category == last.Category && entry.Title == last.Title && entry.Detail == last.Detail &&
+                    entry.Subject == last.Subject && entry.Level == last.Level &&
+                    entry.AtUtc.ToLocalTime().Date == last.AtUtc.ToLocalTime().Date)
+                {
+                    groups[^1] = previous with { Count = previous.Count + 1,
+                        FirstAtUtc = entry.AtUtc < previous.FirstAtUtc ? entry.AtUtc : previous.FirstAtUtc,
+                        LastAtUtc = entry.AtUtc > previous.LastAtUtc ? entry.AtUtc : previous.LastAtUtc };
+                    continue;
+                }
+            }
+            groups.Add(new(record, entry.AtUtc, entry.AtUtc, 1));
+        }
+        return [.. groups];
+    }
+
     public static string SaveError(string? error)
     {
         if (error == "DNS服务器须为IP地址，可附带1–65535端口。")

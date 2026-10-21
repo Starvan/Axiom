@@ -47,7 +47,7 @@ public sealed partial class WorkbenchWindow
         var start = new TimePicker { Header = "允许运行的开始时间", ClockIdentifier = "24HourClock", Time = TimeSpan.FromMinutes(window.StartMinute) };
         var end = new TimePicker { Header = "允许运行的结束时间", ClockIdentifier = "24HourClock", Time = TimeSpan.FromMinutes(window.EndMinute) };
         AutomationProperties.SetName(start, "自动暂停 开始时间"); AutomationProperties.SetName(end, "自动暂停 结束时间");
-        times.Children.Add(start); times.Children.Add(end);
+        times.Children.Add(SideBySide(start, end));
         var days = Enumerable.Range(0, 7).Select(i => (i + 1) % 7).Select(day =>
         {
             var box = new CheckBox { Content = WeekdayLabels[day], IsChecked = (window.Days & (1 << day)) != 0 };

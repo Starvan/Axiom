@@ -15,13 +15,15 @@ public sealed partial class WorkbenchWindow
         var caption = Column(4); caption.Children.Add(Text(label, 12, Muted));
         var descriptor = FindCapability(invocation, kind);
         caption.Children.Add(Text(descriptor?.Name ?? (invocation is null ? "尚未选择" : "原类型暂不可用"), 15, Ink, true));
-        if (descriptor is not null) caption.Children.Add(Text(descriptor.Category, 12, Muted));
+
         row.Children.Add(caption);
         var button = Action(invocation is null ? "选择…" : "更改…"); button.VerticalAlignment = VerticalAlignment.Center;
         AutomationProperties.SetName(button, "选择" + label);
         AutomationProperties.SetAutomationId(button, automationId);
         button.Click += async (_, _) => await choose();
-        Grid.SetColumn(button, 1); row.Children.Add(button);
+        var actions = Row(4);
+        if (descriptor is not null) actions.Children.Add(Help(descriptor.Description, "类型说明：" + descriptor.Name));
+        actions.Children.Add(button); Grid.SetColumn(actions, 1); row.Children.Add(actions);
         return row;
     }
 

@@ -23,8 +23,8 @@ public sealed partial class WorkbenchWindow
         if (!double.IsFinite(height) || height <= 0) return 4;
         // A card row contains a title, detail and metadata. Reserve the heading,
         // toolbar and date labels so a page contains only complete visible rows.
-        var rowHeight = width < 760 ? 104 : 92;
-        var available = Math.Max(200, height - 180);
+        var rowHeight = width < 600 ? 82 : 66;
+        var available = Math.Max(200, height - 50);
         return Math.Clamp((int)Math.Floor(available / rowHeight), 1, 64);
     }
 
@@ -56,7 +56,7 @@ public sealed partial class WorkbenchWindow
         Grid.SetColumn(clear, 1); actions.Children.Add(clear);
         toolbar.Children.Add(actions);
         ToolTipService.SetToolTip(clear, "保留最近七天的记录，清理后无法撤销");
-        content.Children.Add(toolbar);
+        pageTools.Children.Add(toolbar);
 
         if (activityError is not null || activity?.Error is not null || !reachable)
             content.Children.Add(Card(Text(activityError ?? activity?.Error ?? "后台未连接，下面保留的是上次读取的记录。", 13, Amber), PaleAmber, 16));
@@ -72,13 +72,14 @@ public sealed partial class WorkbenchWindow
         }
         else
         {
-            if (activityPositions.Count > 0 || activity.BeforeId is not null) content.Children.Add(ActivityPager());
+            if (activityPositions.Count > 0 || activity.BeforeId is not null) pageTools.Children.Add(ActivityPager());
             // Group consecutive dates so each page follows the durable event order.
             DateOnly? date = null;
             StackPanel? rows = null;
-            foreach (var record in activity.Records)
+            foreach (var group in WorkbenchPresentation.GroupActivity(activity.Records))
             {
-                var local = record.Event.AtUtc.ToLocalTime();
+                var record = group.Latest;
+                var local = group.LastAtUtc.ToLocalTime();
                 var nextDate = DateOnly.FromDateTime(local.DateTime);
                 if (date != nextDate)
                 {
@@ -99,9 +100,21 @@ public sealed partial class WorkbenchWindow
                 AutomationProperties.SetName(icon, entry.Level switch { ActivityLevel.Success => "完成", ActivityLevel.Warning => "提醒",
                     ActivityLevel.Error => "异常", _ => "活动" });
                 row.Children.Add(icon);
-                var body = Column(6);
-                body.Children.Add(Preview(entry.Title, 14, Ink, true));
-                if (!string.IsNullOrEmpty(entry.Subject)) body.Children.Add(Preview(entry.Subject, 12, Accent));
+                var body = Column(4);
+                var heading = new Grid { ColumnSpacing = 8 };
+                heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                heading.Children.Add(Preview(entry.Title, 14, Ink, true));
+                if (group.Count > 1)
+                {
+                    var repeat = Badge($"连续 {group.Count} 次", true); Grid.SetColumn(repeat, 1); heading.Children.Add(repeat);
+                    ToolTipService.SetToolTip(repeat, $"本页连续相同记录 · {group.FirstAtUtc.ToLocalTime():HH:mm:ss}–{local:HH:mm:ss}。原始记录仍保留。");
+                }
+                var time = Text($"{local:HH:mm:ss}", 11, Muted); time.VerticalAlignment = VerticalAlignment.Center;
+                ToolTipService.SetToolTip(time, $"{local:yyyy-MM-dd HH:mm:ss} · {entry.Category}");
+                Grid.SetColumn(time, 2); heading.Children.Add(time); body.Children.Add(heading);
+                if (!string.IsNullOrEmpty(entry.Subject) && entry.Subject != entry.Detail) body.Children.Add(Preview(entry.Subject, 12, Accent));
                 if (!string.IsNullOrWhiteSpace(entry.Detail))
                 {
                     if (warning) body.Children.Add(Text(entry.Detail, 13, Amber));
@@ -116,7 +129,6 @@ public sealed partial class WorkbenchWindow
                         body.Children.Add(detail);
                     }
                 }
-                body.Children.Add(Text($"{local:HH:mm:ss}  ·  {entry.Category}", 11, Muted));
                 Grid.SetColumn(body, 1); row.Children.Add(body);
                 rows!.Children.Add(new Border { Child = row, BorderBrush = Line,
                     BorderThickness = new Thickness(0, rows.Children.Count == 0 ? 0 : 1, 0, 0) });

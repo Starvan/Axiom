@@ -29,7 +29,7 @@ public sealed partial class WorkbenchWindow
         }
         if (trayToolError is not null) body.Children.Add(Text(trayToolError, 12, Amber));
         body.Children.Add(Help("开启或启用时保存名单，会先处理当前图标一次；之后按所选模式运行。关闭窗口不影响，关闭工具会停止未来操作。"));
-        var actions = Row(10); var settings = Action("工具设置"); settings.IsEnabled = reachable;
+        var actions = FlowActions(); var settings = Action("工具设置"); settings.IsEnabled = reachable;
         settings.Click += async (_, _) => await OpenTrayToolSettingsAsync(); actions.Children.Add(settings);
         var hide = Action("立即隐藏"); hide.IsEnabled = reachable && trayTool?.Settings.Enabled == true;
         ToolTipService.SetToolTip(hide, "启用工具后，可手动再处理当前图标一次。");

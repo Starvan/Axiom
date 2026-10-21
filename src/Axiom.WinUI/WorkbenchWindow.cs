@@ -35,6 +35,9 @@ public sealed partial class WorkbenchWindow : Window
     private static readonly SolidColorBrush Hover = Color(245, 248, 251);
     private readonly FontIcon pageGlyph = new() { Glyph = "\uE8A5", FontSize = 22, Foreground = Accent };
     private StackPanel content = null!;
+    private StackPanel pageTools = null!;
+    private readonly ContentControl pageToolsHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private bool pageScrollToTop;
     private readonly ContentControl contentHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly TextBlock pageTitle = Text("", 28, Ink, true);
     private readonly TextBlock pageSubtitle = Text("", 14, Muted);
@@ -116,6 +119,49 @@ public sealed partial class WorkbenchWindow : Window
         var text = Text(value, size, brush, bold); text.MaxLines = 1; text.TextTrimming = TextTrimming.CharacterEllipsis;
         ToolTipService.SetToolTip(text, value); return text;
     }
+    // These layouts are shared by the current forms and toolbars, with no runtime work.
+    private static Grid SideBySide(FrameworkElement first, FrameworkElement second)
+    {
+        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.Children.Add(first); grid.Children.Add(second);
+        void Fit()
+        {
+            var narrow = grid.ActualWidth < 480;
+            Grid.SetColumnSpan(first, narrow ? 2 : 1);
+            Grid.SetRow(second, narrow ? 1 : 0); Grid.SetColumn(second, narrow ? 0 : 1);
+            Grid.SetColumnSpan(second, narrow ? 2 : 1);
+        }
+        grid.SizeChanged += (_, _) => Fit(); Fit(); return grid;
+    }
+    private static Grid FlowActions()
+    {
+        var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
+        void Fit()
+        {
+            var count = grid.Children.Count; if (count == 0) return;
+            while (grid.ColumnDefinitions.Count < count)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition());
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            }
+            grid.MaxWidth = count * 160;
+            var columns = Math.Clamp((int)(grid.ActualWidth / 130), 1, count);
+            for (var i = 0; i < count; i++)
+            {
+                grid.ColumnDefinitions[i].Width = i < columns ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+                if (grid.Children[i] is FrameworkElement child)
+                {
+                    Grid.SetColumn(child, i % columns); Grid.SetRow(child, i / columns);
+                    child.HorizontalAlignment = HorizontalAlignment.Stretch;
+                }
+            }
+        }
+        grid.Loaded += (_, _) => Fit(); grid.SizeChanged += (_, _) => Fit(); return grid;
+    }
     private static Grid ToolHeading()
     {
         var heading = new Grid { ColumnSpacing = 12, RowSpacing = 8 };
@@ -181,7 +227,7 @@ public sealed partial class WorkbenchWindow : Window
         pageScroll = scroll;
         pageScroll.SizeChanged += (_, _) => QueueActivityViewportRefresh();
         var body = Column(18);
-        body.Padding = new Thickness(32, 24, 32, 28);
+        body.Padding = new Thickness(32, 0, 32, 24);
         var heading = new Grid { ColumnSpacing = 14, Margin = new Thickness(0, 0, 0, 4) };
         heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -189,22 +235,29 @@ public sealed partial class WorkbenchWindow : Window
             VerticalAlignment = VerticalAlignment.Center, Child = pageGlyph });
         var headingText = Column(4); headingText.Children.Add(pageTitle); headingText.Children.Add(pageSubtitle);
         Grid.SetColumn(headingText, 1); heading.Children.Add(headingText);
-        body.Children.Add(heading); body.Children.Add(contentHost);
+        body.Children.Add(contentHost);
         scroll.Content = body;
         var main = new Grid();
+        main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        main.Children.Add(scroll);
+        heading.Margin = new Thickness(32, 20, 32, 14);
+        pageToolsHost.Margin = new Thickness(32, 0, 32, 12);
+        main.Children.Add(heading); Grid.SetRow(pageToolsHost, 1); main.Children.Add(pageToolsHost);
+        Grid.SetRow(scroll, 2); main.Children.Add(scroll);
         var bottom = Column(8); usageStop.Visibility = usageIndicator.Visibility = Visibility.Collapsed; usageStop.Click += async (_, _) => await UsageCommandAsync("stop"); bottom.Children.Add(usageIndicator); bottom.Children.Add(usageStop); bottom.Children.Add(notice); bottom.Children.Add(footerHost);
         bottom.Margin = new Thickness(24, 0, 24, 16);
-        Grid.SetRow(bottom, 1); main.Children.Add(bottom);
+        Grid.SetRow(bottom, 3); main.Children.Add(bottom);
         Grid.SetColumn(main, 1); shellGrid.Children.Add(main);
         var titleRail = new Border { Width = 200, Background = Rail, HorizontalAlignment = HorizontalAlignment.Left };
         shellGrid.SizeChanged += (_, args) =>
         {
             var compact = args.NewSize.Width < 850;
             shellGrid.ColumnDefinitions[0].Width = new GridLength(compact ? 150 : 200);
-            body.Padding = new Thickness(compact ? 20 : 32, 24, compact ? 20 : 32, 24);
+            body.Padding = new Thickness(compact ? 20 : 32, 0, compact ? 20 : 32, 24);
+            heading.Margin = new Thickness(compact ? 20 : 32, 20, compact ? 20 : 32, 14);
+            pageToolsHost.Margin = new Thickness(compact ? 20 : 32, 0, compact ? 20 : 32, 12);
             titleRail.Width = compact ? 150 : 200;
             sideNote.Visibility = Visibility.Visible;
         };
@@ -248,7 +301,7 @@ public sealed partial class WorkbenchWindow : Window
         button.Click += async (_, _) =>
         {
             if (busy || !await ConfirmDiscardAsync()) return;
-            editing = false; groupEditing = false; viewingProcessGroups = false; page = target; notice.IsOpen = false; Render(); await RefreshAsync();
+            editing = false; groupEditing = false; page = target; pageScrollToTop = true; notice.IsOpen = false; Render(); await RefreshAsync();
         };
         navigation[target] = button; panel.Children.Add(button);
     }
@@ -280,9 +333,8 @@ public sealed partial class WorkbenchWindow : Window
         {
             Page.Rules when editing => (editor.Version == 0 ? "新建任务" : "编辑任务", "选择检测什么，再决定执行什么。"),
             Page.Rules => ("我的自动化", "设定一次，日常交给 Axiom。"),
-            Page.Groups when groupEditing => (groupDraft?.Version == 0 ? "新建进程组" : "编辑进程组", "整理一次，配置任务时随手选择。"),
-            Page.Groups when viewingProcessGroups => ("进程组", "整理程序名单，在不同任务中重复使用。"),
-            Page.Groups => ("程序组", "把常用选择放在一起。"),
+            Page.Groups when groupEditing => (groupDraft?.Version == 0 ? "新建程序组" : "编辑程序组", "整理一次，配置任务时随手选择。"),
+            Page.Groups => ("程序组", "整理常用程序，在任务中快速选择。"),
             Page.Toolbox => ("工具箱", "省去重复整理的时间。"),
             Page.Usage => ("使用观察", "主动记录一段过程，发现值得自动化的环节。"),
             Page.Activity => ("活动记录", "查看执行结果与需要留意的事。"),
@@ -292,7 +344,8 @@ public sealed partial class WorkbenchWindow : Window
         // Build a detached page and replace it once. Clearing the live child vector
         // can invalidate WinUI accessibility peers while an edit invocation is returning.
         content = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Stretch };
-        footer = Row(10);
+        pageTools = Column(10);
+        footer = Row(10); footer.HorizontalAlignment = HorizontalAlignment.Right;
         footer.IsHitTestVisible = !busy;
         footer.Visibility = editing && page == Page.Rules || groupEditing && page == Page.Groups ? Visibility.Visible : Visibility.Collapsed;
         content.MaxWidth = editing && page == Page.Rules ? 780 : double.PositiveInfinity;
@@ -300,9 +353,11 @@ public sealed partial class WorkbenchWindow : Window
             case Page.Toolbox: BuildToolbox(); break; case Page.Usage: BuildUsage(); break; case Page.Activity: BuildActivity(); break; default: BuildSettings(); break; }
         contentHost.Content = content;
         footerHost.Content = footer;
-        if (activityScrollToTop && page == Page.Activity)
+        pageToolsHost.Content = pageTools;
+        pageToolsHost.Visibility = pageTools.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (pageScrollToTop || activityScrollToTop && page == Page.Activity)
         {
-            activityScrollToTop = false;
+            pageScrollToTop = false; activityScrollToTop = false;
             DispatcherQueue.TryEnqueue(() => pageScroll.ChangeView(null, 0, null, true));
         }
     }
@@ -319,6 +374,7 @@ public sealed partial class WorkbenchWindow : Window
         // IsHitTestVisible prevents duplicate clicks without applying WinUI's
         // disabled visual state (StackPanel does not expose IsEnabled here).
         pageScroll.IsHitTestVisible = !value;
+        pageToolsHost.IsHitTestVisible = !value;
         footer.IsHitTestVisible = !value;
     }
     private async Task<bool> ConfirmAsync(string title, string message, string action) => await ShowDialogAsync(new ContentDialog
@@ -330,7 +386,7 @@ public sealed partial class WorkbenchWindow : Window
     private void SelectRule(AutomationTask? rule)
     {
         editor.Load(rule);
-        editing = true; notice.IsOpen = false; Render();
+        editing = true; pageScrollToTop = true; notice.IsOpen = false; Render();
     }
     private async Task RefreshAsync()
     {

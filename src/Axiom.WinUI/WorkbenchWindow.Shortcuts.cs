@@ -8,8 +8,7 @@ public sealed partial class WorkbenchWindow
 {
     private void BuildShortcutSettings()
     {
-        var body = Column(14); body.Children.Add(Text("全局快捷键", 20, Ink, true));
-        body.Children.Add(Text("关闭窗口后也能使用。选择一个组合键，调用 Axiom 的功能。", 13, Muted));
+        var body = Column(14); body.Children.Add(Text("快捷键", 18, Ink, true));
         if (shortcutError is not null) body.Children.Add(Text(shortcutError, 13, Amber));
         if (shortcuts is null) body.Children.Add(Text("尚未读取快捷键，请刷新后重试。", 13, Muted));
         else
@@ -18,30 +17,30 @@ public sealed partial class WorkbenchWindow
             if (shortcuts.LastError is not null) body.Children.Add(Text(shortcuts.LastError, 13, Amber));
             foreach (var item in shortcuts.Shortcuts)
             {
-                var row = Column(8);
+                var row = Column(6);
                 row.Children.Add(Text(shortcuts.Functions.FirstOrDefault(x => x.Id == item.Binding.FunctionId)?.Name ?? "原功能（当前不可用）", 16, Ink, true));
                 var heading = Row(12); heading.Children.Add(Text(item.Binding.Chord.ToString(), 16, Ink, true));
                 heading.Children.Add(Badge(!item.Binding.Enabled ? "已停用" : item.Registered ? "已生效" : "未生效", !item.Registered)); row.Children.Add(heading);
                 if (item.Error is not null) row.Children.Add(Text(item.Error, 12, Amber));
-                var actions = new Grid { ColumnSpacing = 8, MaxWidth = 480, HorizontalAlignment = HorizontalAlignment.Left };
-                for (var index = 0; index < 3; index++) actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var actions = FlowActions();
                 void AddAction(Button button)
                 {
                     button.Content = Text((string)button.Content, 14); button.MinWidth = 0; button.Padding = new Thickness(8);
                     button.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    Grid.SetColumn(button, actions.Children.Count); actions.Children.Add(button);
+                    actions.Children.Add(button);
                 }
-                var edit = Action("编辑快捷键"); edit.IsEnabled = shortcuts.ListenerAvailable;
+                var edit = Action("编辑"); edit.IsEnabled = shortcuts.ListenerAvailable;
                 edit.Click += async (_, _) => await EditShortcutAsync(item.Binding); AddAction(edit);
-                var toggle = Action(item.Binding.Enabled ? "停用快捷键" : "启用快捷键"); toggle.IsEnabled = shortcuts.ListenerAvailable;
+                var toggle = Action(item.Binding.Enabled ? "停用" : "启用"); toggle.IsEnabled = shortcuts.ListenerAvailable;
                 toggle.Click += async (_, _) => await MutateShortcutAsync(new(1, "save-shortcut", Guid.NewGuid().ToString("N"), Shortcut: item.Binding with { Enabled = !item.Binding.Enabled })); AddAction(toggle);
-                var delete = Action("删除快捷键"); delete.IsEnabled = shortcuts.ListenerAvailable;
+                var delete = Action("删除"); delete.IsEnabled = shortcuts.ListenerAvailable;
                 delete.Click += async (_, _) =>
                 {
                     if (!await ConfirmAsync("删除这条快捷键？", "组合键将解除，其他快捷键和自动化任务继续工作。", "删除")) return;
                     await MutateShortcutAsync(new(1, "delete-shortcut", Guid.NewGuid().ToString("N"), Id: item.Binding.Id, ExpectedVersion: item.Binding.Version));
                 }; AddAction(delete);
-                row.Children.Add(actions); body.Children.Add(Card(row, Canvas, 16));
+                var entry = SideBySide(row, actions);
+                body.Children.Add(new Border { Child = entry, Padding = new Thickness(0, 12, 0, 12), BorderBrush = Line, BorderThickness = new Thickness(0, 1, 0, 0) });
             }
             if (shortcuts.Shortcuts.IsEmpty) body.Children.Add(Text("没有快捷键。新增一个，方便随时打开 Axiom。", 13, Muted));
         }
