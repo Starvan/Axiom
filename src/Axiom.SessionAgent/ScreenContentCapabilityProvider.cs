@@ -22,7 +22,7 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
             throw new ArgumentException("画面检测资源无效。");
         token.ThrowIfCancellationRequested();
         var entries = resources.Select(r => new Entry(r)).ToArray();
-        foreach (var e in entries) e.State = new(e.Spec.EnterPercent, e.Spec.ExitPercent, TimeSpan.FromSeconds((double)e.Spec.StableSeconds));
+        foreach (var e in entries) e.State = new(e.Spec.EnterPercent, e.Spec.ExitPercent, TimeSpan.FromSeconds((double)e.Spec.StableSeconds), e.Spec.Mode == "regions");
         var time = timeProvider ?? TimeProvider.System;
         TimeZoneInfo Zone() { if (readZone is not null) return readZone(); TimeZoneInfo.ClearCachedData(); return TimeZoneInfo.Local; }
         TimeSpan Elapsed() => TimeSpan.FromSeconds((double)time.GetTimestamp() / time.TimestampFrequency);

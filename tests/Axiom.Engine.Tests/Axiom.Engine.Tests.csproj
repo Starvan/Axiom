@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/ScreenBrightRegions.cs" Link="ScreenBrightRegions.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.Hosts.cs" Link="PluginTaskRuntime.Hosts.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/ClockEventCapabilityProvider.cs" Link="ClockEventCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.RunConditions.cs" Link="PluginTaskRuntime.RunConditions.cs" />

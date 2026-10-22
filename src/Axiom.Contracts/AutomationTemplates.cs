@@ -12,7 +12,7 @@ public static class AutomationTemplates
         (string Field, string Value)[] DetectionValues, (string Field, string Value)[] ActionValues);
     private static readonly Recipe[] Recipes =
     [
-        new("screen-content-night-dim", "夜间明亮画面时调整亮度并恢复", "默认20:00–08:00检测主屏SDR画面；明亮面积达到65%并稳定3秒后设置40%，降到45%并稳定3秒后恢复原值。HDR、锁屏、睡眠、时段外或未知会释放控制。40%是绝对目标，请改成比日常亮度低的值；先审阅后启用。", ScreenContentCapabilities.Bright, BuiltInBrightnessRestoreCapabilities.Set, [("start", "20:00"), ("end", "08:00")], [("percent", "40")]),
+        new("screen-content-night-dim", "夜间明亮画面时调整亮度并恢复", "默认20:00–08:00按大块亮区评分检测；进入20、退出12，稳定0.5秒后设置40%或恢复原值。HDR暂停由任务运行条件另行选择。40%是绝对目标，请改成低于日常亮度的值；先审阅后启用。", ScreenContentCapabilities.Bright, BuiltInBrightnessRestoreCapabilities.Set, [("mode", "regions"), ("enterPercent", "20"), ("exitPercent", "12"), ("stableSeconds", "0.5"), ("start", "20:00"), ("end", "08:00")], [("percent", "40")]),
         new("public-network-reminder", "出现公用网络分类后提醒", "Windows从没有公用匹配新变为有公用匹配时，请求安静桌面提醒；首次、重新启用及未知恢复不补提醒，不读取网络名称。分类不代表Internet可用性或安全可信，请按实际需要审阅规则。", NetworkCategoryCapabilities.State, NotificationCapabilities.Show, [("category", "public")], [("title", "Windows网络分类"), ("body", "Windows报告当前有已连接网络归为公用；分类不代表Internet可用性或安全可信。")]),
         new("application-audio-awake", "指定程序音频活动期间保持唤醒", "选择实际播放器或会议工具完整exe路径；默认播放端点存在其已核验活动渲染会话时保持系统唤醒，屏幕仍可关闭。首次已活动即可持有，全部不活动、未知或暂停后释放；不证明实际发声、收音或会议进行，不修改音量/静音。", ApplicationAudioActivityCapabilities.Active, KeepAwakeCapabilities.Hold, [], [("target", "system")]),
         new("current-media-awake", "当前媒体播放期间保持系统唤醒", "Windows选中的当前媒体会话报告正在播放时，持有Axiom自己的系统唤醒请求，屏幕仍可关闭。暂停、停止、没有会话、未知或暂停规则后释放；不指定播放器，不证明实际出声，不阻止手动睡眠。", MediaPlaybackCapabilities.State, KeepAwakeCapabilities.Hold, [("state", "playing")], [("target", "system")]),

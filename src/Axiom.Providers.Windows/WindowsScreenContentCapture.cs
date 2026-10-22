@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 namespace Axiom.Providers.Windows;
-// Frames remain GPU-only. One compute group samples 64x36 points and the CPU
-// reads only one uint. No desktop texture is mapped, encoded, saved, or logged.
+// Full frames remain GPU-only. Read back a bounded quantized luminance grid
+// and legacy count; no desktop texture is mapped, encoded, saved, or logged.
 public sealed unsafe class WindowsScreenContentCapture : IDisposable
 {
     private static readonly object SharedGate = new();
@@ -17,6 +17,7 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
     private readonly CancellationTokenSource stop = new();
     private readonly Thread? worker;
     private nint device, context, shader, result, staging, uav, duplication;
+    private readonly ScreenBrightRegions regions = new();
     private bool held, counted;
     private int disposed;
     public int AcquiredFrames, PointerOnlyFrames, TimeoutCount;
@@ -84,7 +85,7 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
                     else if (info.LastPresentTime != 0)
                     {
                         var texture = Query(resource, new("6F15AAF2-D208-4E89-9AB4-489535D34F9C"));
-                        try { publish(new(ReadArea(texture))); } finally { Marshal.Release(texture); }
+                        try { publish(ReadFrame(texture)); } finally { Marshal.Release(texture); }
                     }
                     else PointerOnlyFrames++;
                 }
@@ -97,7 +98,7 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
         catch (Exception) { if (!stop.IsCancellationRequested) publish(new(null, "主屏捕获或GPU统计已失效，等待显示或会话恢复通知后重建。", CaptureLost: true)); }
         finally { Cleanup(); }
     }
-    private double ReadArea(nint texture)
+    private ScreenContentReading ReadFrame(nint texture)
     {
         nint srv = 0;
         try
@@ -114,7 +115,8 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
             ((delegate* unmanaged[Stdcall]<nint, nint, nint, void>)Slot(context, 47))(context, staging, result);
             Mapped mapped;
             Check(((delegate* unmanaged[Stdcall]<nint, nint, uint, uint, uint, Mapped*, int>)Slot(context, 14))(context, staging, 0, 1, 0, &mapped));
-            try { return *(uint*)mapped.Data * 100.0 / (64 * 36); }
+            try { return new(*(uint*)mapped.Data * 100.0 / ScreenBrightRegions.Count,
+                Regions: regions.Analyze(new ReadOnlySpan<uint>((uint*)mapped.Data + 1, ScreenBrightRegions.Count))); }
             finally { ((delegate* unmanaged[Stdcall]<nint, nint, uint, void>)Slot(context, 15))(context, staging, 0); }
         }
         finally { Release(ref srv); }
@@ -125,12 +127,22 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
             Texture2D<float4> image : register(t0);
             RWStructuredBuffer<uint> result : register(u0);
             groupshared uint counts[64];
+            float3 toLinear(float3 c) {
+                float3 lo=c/12.92, hi=pow((c+0.055)/1.055,2.4);
+                return float3(c.r<=0.04045?lo.r:hi.r,c.g<=0.04045?lo.g:hi.g,c.b<=0.04045?lo.b:hi.b);
+            }
             [numthreads(64,1,1)] void main(uint3 id : SV_GroupThreadID) {
                 uint w,h; image.GetDimensions(w,h); uint n=0;
                 for(uint y=0;y<36;y++) {
                     uint2 p=uint2((id.x+0.5)*w/64.0,(y+0.5)*h/36.0);
                     float3 rgb=image.Load(int3(p,0)).rgb;
                     n += dot(rgb,float3(0.2126,0.7152,0.0722)) >= 0.7 ? 1 : 0;
+                    float luminance=0;
+                    for(uint sy=0;sy<2;sy++) for(uint sx=0;sx<2;sx++) {
+                        uint2 q=uint2((id.x+(sx+0.5)/2.0)*w/64.0,(y+(sy+0.5)/2.0)*h/36.0);
+                        luminance+=dot(toLinear(image.Load(int3(q,0)).rgb),float3(0.2126,0.7152,0.0722));
+                    }
+                    result[1+y*64+id.x]=(uint)(saturate(luminance*0.25)*255+0.5);
                 }
                 counts[id.x]=n; GroupMemoryBarrierWithGroupSync();
                 if(id.x==0) { uint sum=0; for(uint i=0;i<64;i++) sum+=counts[i]; result[0]=sum; }
@@ -147,12 +159,12 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
             Check(((delegate* unmanaged[Stdcall]<nint, nint, nuint, nint, nint*, int>)Slot(device, 18))(device, data, length, 0, &created)); shader = created;
         }
         finally { if (code != 0) Marshal.Release(code); if (errors != 0) Marshal.Release(errors); }
-        var desc = new BufferDesc { ByteWidth = 4, BindFlags = 0x80, MiscFlags = 0x40, StructureByteStride = 4 };
+        var desc = new BufferDesc { ByteWidth = (ScreenBrightRegions.Count + 1) * 4, BindFlags = 0x80, MiscFlags = 0x40, StructureByteStride = 4 };
         nint buffer;
         Check(((delegate* unmanaged[Stdcall]<nint, BufferDesc*, nint, nint*, int>)Slot(device, 3))(device, &desc, 0, &buffer)); result = buffer;
         nint view;
         Check(((delegate* unmanaged[Stdcall]<nint, nint, nint, nint*, int>)Slot(device, 8))(device, result, 0, &view)); uav = view;
-        desc = new BufferDesc { ByteWidth = 4, Usage = 3, CpuAccessFlags = 0x20000 };
+        desc = new BufferDesc { ByteWidth = (ScreenBrightRegions.Count + 1) * 4, Usage = 3, CpuAccessFlags = 0x20000 };
         Check(((delegate* unmanaged[Stdcall]<nint, BufferDesc*, nint, nint*, int>)Slot(device, 3))(device, &desc, 0, &buffer)); staging = buffer;
     }
 
@@ -193,11 +205,17 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
         }
     }
     // Validate the real GPU path with synthetic input, never desktop pixels.
-    internal static double MeasureSynthetic(int width, int height, ReadOnlySpan<byte> bgra)
+    internal static double MeasureSynthetic(int width, int height, ReadOnlySpan<byte> bgra) => MeasureSyntheticFrame(width, height, bgra).AreaPercent!.Value;
+    internal static ScreenBrightRegionMetrics MeasureSyntheticRegions(int width, int height, ReadOnlySpan<byte> bgra) => MeasureSyntheticFrame(width, height, bgra).Regions!;
+    private static ScreenContentReading MeasureSyntheticFrame(int width, int height, ReadOnlySpan<byte> bgra)
     {
         if (width < 1 || height < 1 || bgra.Length != checked(width * height * 4)) throw new ArgumentException("Synthetic texture size mismatch.");
         using var native = new WindowsScreenContentCapture();
-        Check(D3D11CreateDevice(0, 1, 0, 0x20, 0, 0, 7, out native.device, out _, out native.context)); native.CreateReduction();
+        // Synthetic shader correctness also runs on headless Windows CI. Actual
+        // desktop capture never uses this WARP fallback.
+        var hr = D3D11CreateDevice(0, 1, 0, 0x20, 0, 0, 7, out native.device, out _, out native.context);
+        if (hr < 0) Check(D3D11CreateDevice(0, 5, 0, 0x20, 0, 0, 7, out native.device, out _, out native.context));
+        native.CreateReduction();
         var desc = new TextureDesc { Width = (uint)width, Height = (uint)height, MipLevels = 1, ArraySize = 1, Format = 87, SampleCount = 1, BindFlags = 8 };
         nint texture = 0;
         fixed (byte* pixels = bgra)
@@ -205,7 +223,7 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
             var data = new TextureData { Memory = (nint)pixels, Pitch = (uint)width * 4 };
             Check(((delegate* unmanaged[Stdcall]<nint, TextureDesc*, TextureData*, nint*, int>)Slot(native.device, 5))(native.device, &desc, &data, &texture));
         }
-        try { return native.ReadArea(texture); } finally { Marshal.Release(texture); }
+        try { return native.ReadFrame(texture); } finally { Marshal.Release(texture); }
     }
     private WindowsScreenContentCapture() { publish = _ => { }; }
     private void Cleanup()

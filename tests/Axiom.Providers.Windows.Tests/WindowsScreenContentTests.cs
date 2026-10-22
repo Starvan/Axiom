@@ -6,6 +6,28 @@ namespace Axiom.Providers.Windows.Tests;
 public sealed class WindowsScreenContentTests
 {
     [Fact(Timeout = 15000)]
+    public async Task ActualGpuRegionAnalysisLinearizesColorsAndDistinguishesPanelFromDots()
+    {
+        await Task.Yield(); Assert.True(OperatingSystem.IsWindows());
+        byte[] Image(byte r, byte g, byte b, bool dots = false)
+        {
+            var pixels = new byte[64 * 36 * 4];
+            for (var y = 0; y < 36; y++) for (var x = 0; x < 64; x++)
+            {
+                var i = (y * 64 + x) * 4; pixels[i + 3] = 255;
+                if (dots ? y % 2 == 0 && x % 2 == 0 : x >= 16 && x < 48 && y >= 9 && y < 27)
+                { pixels[i] = b; pixels[i + 1] = g; pixels[i + 2] = r; }
+            }
+            return pixels;
+        }
+        var panel = WindowsScreenContentCapture.MeasureSyntheticRegions(64, 36, Image(255, 255, 255));
+        Assert.True(panel.Score >= 20); Assert.Equal(25, panel.LargestAreaPercent);
+        Assert.Equal(0, WindowsScreenContentCapture.MeasureSyntheticRegions(64, 36, Image(255, 255, 255, true)).Score);
+        Assert.Equal(0, WindowsScreenContentCapture.MeasureSyntheticRegions(64, 36, Image(200, 200, 200)).Score);
+        Assert.True(WindowsScreenContentCapture.MeasureSyntheticRegions(64, 36, Image(255, 255, 0)).Score >= 20);
+    }
+
+    [Fact(Timeout = 15000)]
     public async Task ActualGpuCountsWhiteBlackGrayAndColoredAreasRatherThanWhiteEqualityOrAConstant()
     {
         await Task.Yield();
